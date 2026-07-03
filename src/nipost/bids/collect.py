@@ -44,7 +44,9 @@ def _cardinality(query: SpecQuery, files: list) -> str | list | None:
     card = query.cardinality
     if card == 'single':
         return paths[0] if len(paths) == 1 else (paths or None)
-    if card in ('optional', 'list'):
+    if card == 'list':
+        return paths
+    if card == 'optional':
         return paths or None
     if card == 'pair':
         return sorted(paths) if len(paths) == 2 else None

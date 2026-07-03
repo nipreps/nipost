@@ -155,3 +155,43 @@ def test_fieldmap_id_sanitized():
     from nipost.bids.spec import sanitize_fieldmap_id
 
     assert sanitize_fieldmap_id('auto_00000') == 'auto00000'
+
+
+def test_boldref2fmap_list_zero_matches(func_root):
+    """list cardinality with zero matches must return [] not None (key must be present)."""
+    from nipost.bids.collect import collect_derivatives
+    from nipost.bids.spec import Query, Spec
+
+    # Spec with only boldref2fmap (list cardinality).
+    # The func_root has a desc-coreg boldref->T1w file but NO no-desc fmap transform
+    # when desc='*none*' is applied and fieldmap_id is a specific value that does not
+    # exist in the tree → zero matches expected.
+    spec = Spec(
+        transforms={
+            'boldref2fmap': Query(
+                {
+                    'from': 'boldref',
+                    'to': '{fieldmap_id}',
+                    'desc': '*none*',
+                    'suffix': 'xfm',
+                },
+                'list',
+            ),
+        },
+    )
+    # Pass a fieldmap_id that does not exist in the tree (no file has to=nonexistent)
+    out = collect_derivatives(
+        func_root,
+        spec=spec,
+        subject_id='01',
+        entities={'task': 'rest'},
+        fieldmap_id='nonexistent',
+    )
+
+    # Key must be present even with zero matches
+    assert 'boldref2fmap' in out['transforms'], (
+        'boldref2fmap key was dropped (got None instead of [])'
+    )
+    assert out['transforms']['boldref2fmap'] == [], (
+        f'Expected [], got {out["transforms"]["boldref2fmap"]!r}'
+    )
