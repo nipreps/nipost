@@ -11,7 +11,7 @@
   },
   "transforms": {
     "hmc": {
-      "entities": { "from": "orig", "to": "boldref", "mode": "image", "suffix": "xfm" },
+      "entities": { "from": "orig", "to": "boldref", "mode": "image", "suffix": "xfm", "extension": ".txt" },
       "cardinality": "single"
     },
     "boldref2anat": {
@@ -20,7 +20,8 @@
         "to": ["anat", "T1w", "T2w"],
         "mode": "image",
         "desc": "coreg",
-        "suffix": "xfm"
+        "suffix": "xfm",
+        "extension": ".txt"
       },
       "cardinality": "single"
     },
@@ -30,7 +31,8 @@
         "to": "{fieldmap_id}",
         "mode": "image",
         "desc": "*none*",
-        "suffix": "xfm"
+        "suffix": "xfm",
+        "extension": ".txt"
       },
       "cardinality": "list"
     }

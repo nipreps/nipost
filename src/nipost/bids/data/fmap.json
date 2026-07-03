@@ -12,7 +12,7 @@
     "cardinality": "single"
   },
   "magnitude": {
-    "entities": { "datatype": "fmap", "suffix": ["magnitude", "epi"] },
+    "entities": { "datatype": "fmap", "desc": "epi", "suffix": "fieldmap" },
     "cardinality": "single"
   }
 }

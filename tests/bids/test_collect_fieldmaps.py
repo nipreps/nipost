@@ -25,7 +25,7 @@ def fmap_deriv(tmp_path):
     for name in (
         'sub-01_fmapid-auto00000_desc-coeff_fieldmap.nii.gz',
         'sub-01_fmapid-auto00000_desc-preproc_fieldmap.nii.gz',
-        'sub-01_fmapid-auto00000_magnitude.nii.gz',
+        'sub-01_fmapid-auto00000_desc-epi_fieldmap.nii.gz',
     ):
         (fmap / name).write_text('')
     return root
