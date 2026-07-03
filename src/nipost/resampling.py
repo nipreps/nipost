@@ -346,7 +346,7 @@ def resample_image(
         if any(isinstance(xfm, nt.linear.LinearTransformsMapping) for xfm in transforms):
             classes = [xfm.__class__.__name__ for xfm in transforms]
             raise ValueError(f'HMC transforms must come last. Found sequence: {classes}')
-        transform_list = transforms.transforms
+        transform_list: list = transforms.transforms  # type: ignore[no-redef]
         hmc = []
 
     # Retrieve the RAS coordinates of the target space
@@ -368,7 +368,7 @@ def resample_image(
     if fieldmap is None:
         fieldmap = nb.Nifti1Image(np.zeros(target.shape[:3], dtype='f4'), target.affine)
     if pe_info is None:
-        pe_info = [(0, 0.0) for _ in range(source.shape[-1])]
+        pe_info = [[0, 0] for _ in range(source.shape[-1])]  # type: ignore[misc]  # matches untyped fMRIPrep source
 
     resampled_data = resample_series(
         data=source.get_fdata(dtype='f4'),
