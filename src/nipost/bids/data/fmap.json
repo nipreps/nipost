@@ -1,0 +1,18 @@
+{
+  "fieldmap": {
+    "entities": { "datatype": "fmap", "desc": "preproc", "suffix": "fieldmap" },
+    "cardinality": "single"
+  },
+  "coeffs": {
+    "entities": {
+      "datatype": "fmap",
+      "desc": ["coeff", "coeff0", "coeff1"],
+      "suffix": "fieldmap"
+    },
+    "cardinality": "single"
+  },
+  "magnitude": {
+    "entities": { "datatype": "fmap", "suffix": ["magnitude", "epi"] },
+    "cardinality": "single"
+  }
+}

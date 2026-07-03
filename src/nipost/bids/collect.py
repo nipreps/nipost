@@ -3,13 +3,15 @@
 
 from __future__ import annotations
 
+import json
+from importlib.resources import files as _pkg_files
 from pathlib import Path
 
 from bids.layout import Query
 
 from nipost.bids._layout import get_layout
 from nipost.bids.spec import Query as SpecQuery
-from nipost.bids.spec import Spec, sanitize_fieldmap_id, substitute_space
+from nipost.bids.spec import Spec, _query_from_dict, sanitize_fieldmap_id, substitute_space
 
 
 def _clean(entities: dict, fieldmap_id: str | None) -> dict:
@@ -105,5 +107,39 @@ def collect_derivatives(
     return out
 
 
-def collect_fieldmaps(derivatives_dir: Path, entities: dict, spec: Spec | None = None) -> dict:
-    raise NotImplementedError  # implemented in Task 12
+def collect_fieldmaps(
+    derivatives_dir: Path,
+    entities: dict,
+    spec: dict[str, SpecQuery] | None = None,
+) -> dict:
+    """Collect fieldmap derivatives grouped by fieldmap id.
+
+    Returns a dict keyed by fmapid (e.g. ``auto00000``), each value being a
+    dict with keys ``fieldmap``, ``coeffs``, and ``magnitude`` (scalars when
+    cardinality is ``single``).
+    """
+    if spec is None:
+        raw = json.loads((_pkg_files('nipost.bids.data') / 'fmap.json').read_text())
+        spec = {k: _query_from_dict(v) for k, v in raw.items()}
+
+    layout = get_layout(Path(derivatives_dir))
+
+    # Enumerate fieldmap ids: prefer the NiPreps pybids extension; fall back to
+    # querying unique entity values if the method is unavailable.
+    if hasattr(layout, 'get_fmapids'):
+        fmapids: list[str] = layout.get_fmapids(**entities)
+    else:
+        fmapids = layout.get(target='fmapid', return_type='id', **entities) or []
+
+    out: dict = {}
+    for fmapid in fmapids:
+        entry: dict = {}
+        for key, query in spec.items():
+            qry = _clean({**query.entities, **entities, 'fmapid': fmapid}, None)
+            result = _cardinality(query, layout.get(**qry))
+            if result is not None:
+                entry[key] = result
+        if entry:
+            out[fmapid] = entry
+
+    return out
