@@ -60,7 +60,6 @@ module = [
     "niworkflows.*",
     "nilearn.*",
     "nest_asyncio",
-    "nipost._version",
 ]
 ignore_missing_imports = true
 
