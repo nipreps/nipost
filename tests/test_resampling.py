@@ -1,6 +1,8 @@
+import nibabel as nb
+import nitransforms as nt
 import numpy as np
 
-from nipost.resampling import resample_series, resample_vol
+from nipost.resampling import resample_image, resample_series, resample_vol
 
 
 def test_resample_vol_identity_recovers_data(ramp_volume):
@@ -41,3 +43,22 @@ def test_resample_series_identity_recovers_series(ramp_volume):
     )
     assert out.shape == series.shape
     assert np.allclose(out, series, atol=1e-4)
+
+
+def test_resample_image_identity_to_same_grid(ramp_volume):
+    vol = np.asanyarray(ramp_volume.dataobj)
+    series = np.stack([vol, vol], axis=-1)
+    source = nb.Nifti1Image(series, np.eye(4))
+    target = nb.Nifti1Image(np.zeros((5, 5, 5), dtype='f4'), np.eye(4))
+
+    out = resample_image(
+        source=source,
+        target=target,
+        transforms=nt.TransformChain([nt.Affine()]),
+        fieldmap=None,
+        pe_info=None,
+        jacobian=False,
+        order=1,
+    )
+    assert out.shape == series.shape
+    assert np.allclose(np.asanyarray(out.dataobj), series, atol=1e-4)

@@ -5,6 +5,8 @@ import os
 from functools import partial
 
 import nibabel as nb
+import nitransforms as nt
+import nitransforms.resampling  # noqa: F401  (registers nt.resampling.apply)
 import numpy as np
 from scipy import ndimage as ndi
 
@@ -18,7 +20,7 @@ def resample_vol(
     jacobian: bool,
     hmc_xfm: np.ndarray | None,
     fmap_hz: np.ndarray,
-    output: np.dtype | np.ndarray | None = None,
+    output: np.dtype | np.ndarray | str | None = None,
     order: int = 3,
     mode: str = 'constant',
     cval: float = 0.0,
@@ -104,7 +106,7 @@ async def resample_series_async(
     jacobian: bool,
     hmc_xfms: list[np.ndarray] | None,
     fmap_hz: np.ndarray,
-    output_dtype: np.dtype | None = None,
+    output_dtype: np.dtype | str | None = None,
     order: int = 3,
     mode: str = 'constant',
     cval: float = 0.0,
@@ -213,7 +215,7 @@ def resample_series(
     jacobian: bool,
     hmc_xfms: list[np.ndarray] | None,
     fmap_hz: np.ndarray,
-    output_dtype: np.dtype | None = None,
+    output_dtype: np.dtype | str | None = None,
     order: int = 3,
     mode: str = 'constant',
     cval: float = 0.0,
@@ -282,3 +284,109 @@ def resample_series(
             max_concurrent=nthreads,
         )
     )
+
+
+def resample_image(
+    source: nb.Nifti1Image,
+    target: nb.Nifti1Image,
+    transforms: nt.TransformChain,
+    fieldmap: nb.Nifti1Image | None,
+    pe_info: list[tuple[int, float]] | None,
+    jacobian: bool = True,
+    nthreads: int = 1,
+    output_dtype: np.dtype | str | None = 'f4',
+    order: int = 3,
+    mode: str = 'constant',
+    cval: float = 0.0,
+    prefilter: bool = True,
+) -> nb.Nifti1Image:
+    """Resample a 3- or 4D image into a target space, applying head-motion
+    and susceptibility-distortion correction simultaneously.
+
+    Parameters
+    ----------
+    source
+        The 3D bold image or 4D bold series to resample.
+    target
+        An image sampled in the target space.
+    transforms
+        A nitransforms TransformChain that maps images from the individual
+        BOLD volume space into the target space.
+    fieldmap
+        The fieldmap, in Hz, sampled in the target space
+    pe_info
+        A list of readout vectors in the form of (axis, signed-readout-time)
+        ``(1, -0.04)`` becomes ``[0, -0.04, 0]``, which indicates that a
+        +1 Hz deflection in the field shifts 0.04 voxels toward the start
+        of the data array in the second dimension.
+    nthreads
+        Number of threads to use for parallel resampling
+    output_dtype
+        The dtype of the output array.
+    order
+        Order of interpolation (default: 3 = cubic)
+    mode
+        How ``data`` is extended beyond its boundaries. See
+        :func:`scipy.ndimage.map_coordinates` for more details.
+    cval
+        Value to fill past edges of ``data`` if ``mode`` is ``'constant'``.
+    prefilter
+        Determines if ``data`` is pre-filtered before interpolation.
+
+    Returns
+    -------
+    resampled_bold
+        The BOLD series resampled into the target space
+    """
+    if not isinstance(transforms, nt.TransformChain):
+        transforms = nt.TransformChain([transforms])
+    if isinstance(transforms[-1], nt.linear.LinearTransformsMapping):
+        transform_list, hmc = transforms[:-1], transforms[-1]
+    else:
+        if any(isinstance(xfm, nt.linear.LinearTransformsMapping) for xfm in transforms):
+            classes = [xfm.__class__.__name__ for xfm in transforms]
+            raise ValueError(f'HMC transforms must come last. Found sequence: {classes}')
+        transform_list = transforms.transforms
+        hmc = []
+
+    # Retrieve the RAS coordinates of the target space
+    coordinates = nt.base.SpatialReference.factory(target).ndcoords.astype('f4')
+
+    # We will operate in voxel space, so get the source affine
+    vox2ras = source.affine
+    ras2vox = np.linalg.inv(vox2ras)
+    # Transform RAS2RAS head motion transforms to VOX2VOX
+    hmc_xfms = [ras2vox @ xfm.matrix @ vox2ras for xfm in hmc]
+
+    # After removing the head-motion transforms, add a mapping from boldref
+    # world space to voxels. This new transform maps from world coordinates
+    # in the target space to voxel coordinates in the source space.
+    ref2vox = nt.TransformChain(transform_list + [nt.Affine(ras2vox)])
+    mapped_coordinates = ref2vox.map(coordinates)
+
+    # Some identities to reduce special casing downstream
+    if fieldmap is None:
+        fieldmap = nb.Nifti1Image(np.zeros(target.shape[:3], dtype='f4'), target.affine)
+    if pe_info is None:
+        pe_info = [(0, 0.0) for _ in range(source.shape[-1])]
+
+    resampled_data = resample_series(
+        data=source.get_fdata(dtype='f4'),
+        coordinates=mapped_coordinates.T.reshape((3, *target.shape[:3])),
+        pe_info=pe_info,
+        jacobian=jacobian,
+        hmc_xfms=hmc_xfms,
+        fmap_hz=fieldmap.get_fdata(dtype='f4'),
+        output_dtype=output_dtype,
+        nthreads=nthreads,
+        order=order,
+        mode=mode,
+        cval=cval,
+        prefilter=prefilter,
+    )
+    resampled_img = nb.Nifti1Image(resampled_data, target.affine, target.header)
+    resampled_img.set_data_dtype('f4')
+    # Preserve zooms of additional dimensions
+    resampled_img.header.set_zooms(target.header.get_zooms()[:3] + source.header.get_zooms()[3:])
+
+    return resampled_img
