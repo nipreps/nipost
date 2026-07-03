@@ -3,9 +3,14 @@
 from warnings import warn
 
 import nibabel as nb
+import nitransforms as nt
+import nitransforms.resampling  # noqa: F401
 import numpy as np
 from scipy.interpolate import BSpline
+from scipy.sparse import hstack as sparse_hstack
 from scipy.sparse import kron, lil_array
+
+from nipost.epi import ensure_positive_cosines
 
 
 def grid_bspline_weights(target_nii, ctrl_nii, dtype='float32'):
@@ -98,3 +103,118 @@ def grid_bspline_weights(target_nii, ctrl_nii, dtype='float32'):
 
     # Calculate the tensor product of the three design matrices
     return kron(kron(wd[0], wd[1]), wd[2])
+
+
+def aligned(aff1: np.ndarray, aff2: np.ndarray) -> bool:
+    """Determine if two affines have aligned grids"""
+    return np.allclose(
+        np.linalg.norm(np.cross(aff1[:-1, :-1].T, aff2[:-1, :-1].T), axis=1),
+        0,
+        atol=1e-3,
+    )
+
+
+def as_affine(xfm: nt.base.TransformBase) -> nt.Affine | None:
+    # Identity transform
+    if type(xfm) is nt.base.TransformBase:
+        return nt.Affine()
+
+    if isinstance(xfm, nt.Affine):
+        return xfm
+
+    if isinstance(xfm, nt.TransformChain) and all(isinstance(x, nt.Affine) for x in xfm):
+        return xfm.asaffine()
+
+    return None
+
+
+def reconstruct_fieldmap(
+    coefficients: list[nb.Nifti1Image],
+    fmap_reference: nb.Nifti1Image,
+    target: nb.Nifti1Image,
+    transforms: nt.TransformChain,
+) -> nb.Nifti1Image:
+    """Resample a fieldmap from B-Spline coefficients into a target space
+
+    If the coefficients and target are aligned, the field is reconstructed
+    directly in the target space.
+    If not, then the field is reconstructed to the ``fmap_reference``
+    resolution, and then resampled according to transforms.
+
+    The former method only applies if the transform chain can be
+    collapsed to a single affine transform.
+
+    Parameters
+    ----------
+    coefficients
+        list of B-spline coefficient files. The affine matrices are used
+        to reconstruct the knot locations.
+    fmap_reference
+        The intermediate reference to reconstruct the fieldmap in, if
+        it cannot be reconstructed directly in the target space.
+    target
+        The target space to to resample the fieldmap into.
+    transforms
+        A nitransforms TransformChain that maps images from the fieldmap
+        space into the target space.
+
+    Returns
+    -------
+    fieldmap
+        The fieldmap encoded in ``coefficients``, resampled in the same
+        space as ``target``
+    """
+
+    direct = False
+    affine_xfm = as_affine(transforms)
+    if affine_xfm is not None:
+        # Transforms maps RAS coordinates in the target to RAS coordinates in
+        # the fieldmap space. Composed with target.affine, we have a target voxel
+        # to fieldmap RAS affine. Hence, this is projected into fieldmap space.
+        projected_affine = affine_xfm.matrix @ target.affine
+        # If the coordinates have the same rotation from voxels, we can construct
+        # bspline weights efficiently.
+        direct = aligned(projected_affine, coefficients[-1].affine)
+
+    if direct:
+        reference, _ = ensure_positive_cosines(
+            target.__class__(target.dataobj, projected_affine, target.header),
+        )
+    else:
+        # Hack. Sometimes the reference array is rotated relative to the fieldmap
+        # and coefficient grids. As far as I know, coefficients are always RAS,
+        # but good to check before doing this.
+        if (
+            nb.aff2axcodes(coefficients[-1].affine)
+            == ('R', 'A', 'S')
+            != nb.aff2axcodes(fmap_reference.affine)
+        ):
+            fmap_reference = nb.as_closest_canonical(fmap_reference)
+        if not aligned(fmap_reference.affine, coefficients[-1].affine):
+            raise ValueError('Reference passed is not aligned with spline grids')
+        reference, _ = ensure_positive_cosines(fmap_reference)
+
+    # Generate tensor-product B-Spline weights
+    colmat = sparse_hstack(
+        [grid_bspline_weights(reference, level) for level in coefficients]
+    ).tocsr()
+    coeff_data: np.ndarray = np.hstack(
+        [level.get_fdata(dtype='float32').reshape(-1) for level in coefficients]
+    )
+
+    # Reconstruct the fieldmap (in Hz) from coefficients
+    fmap_img = nb.Nifti1Image(
+        np.reshape(colmat @ coeff_data, reference.shape[:3]),
+        reference.affine,
+    )
+
+    if not direct:
+        fmap_img = nt.resampling.apply(transforms, fmap_img, reference=target)
+
+    fmap_img.header.set_intent('estimate', name='fieldmap Hz')
+    fmap_img.header.set_data_dtype('float32')
+    fmap_data = np.asanyarray(fmap_img.dataobj)
+    fmap_img.header['cal_max'] = max((abs(fmap_data.min()), fmap_data.max()))
+    fmap_img.header['cal_min'] = -fmap_img.header['cal_max']
+
+    return fmap_img
