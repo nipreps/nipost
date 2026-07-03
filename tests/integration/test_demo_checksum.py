@@ -29,6 +29,15 @@ import pytest
 pytest.importorskip('bids')
 pytest.importorskip('templateflow')
 
+import nilearn
+
+if nilearn.__version__ != '0.12.1':
+    pytest.skip(
+        f'checksum a91beb24 is pinned to nilearn==0.12.1 (got {nilearn.__version__}); '
+        'see module docstring for the exact acceptance environment',
+        allow_module_level=True,
+    )
+
 _DEMO_ROOT_ENV = os.environ.get('NIPOST_DEMO_ROOT', '')
 DEMO = Path(_DEMO_ROOT_ENV or Path(__file__).parents[3] / 'fmriprep-resampling-demo')
 
@@ -141,7 +150,9 @@ def test_demo_reproduces_checksum() -> None:
     fmapref = nb.load(fmapref_file)
     coeff = nb.load(coeff_file)
 
-    bold2std = load_transforms(bold2std_xfms, inverse=[False])
+    bold2std = load_transforms(
+        bold2std_xfms, inverse=[False]
+    )  # single-element inverse list broadcasts to all transforms in the chain
     fmap2std = load_transforms(fmap2std_xfms, inverse=fmap2std_inv)
 
     # --- Cell: Reconstruct the fieldmap in standard space ------------------------
