@@ -1,5 +1,7 @@
 """EPI metadata and orientation helpers (ported from SDCFlows)."""
 
+from typing import cast
+
 import nibabel as nb
 
 
@@ -82,8 +84,7 @@ def get_trt(
     } > {'PhaseEncodingDirection'}:
         # npe = N voxels PE direction
         pe_index = 'ijk'.index(in_meta['PhaseEncodingDirection'][0])
-        assert in_file is not None, 'in_file is required when PhaseEncodingDirection is set'
-        npe = nb.load(in_file).shape[pe_index]  # type: ignore[attr-defined]
+        npe = nb.load(cast(str, in_file)).shape[pe_index]  # type: ignore[attr-defined]
 
         # Use case 2: EES is defined
         ees = in_meta.get('EffectiveEchoSpacing')
