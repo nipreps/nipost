@@ -1,0 +1,38 @@
+{
+  "items": {
+    "hmc_boldref": {
+      "entities": { "datatype": "func", "desc": "hmc", "suffix": "boldref" },
+      "cardinality": "single"
+    },
+    "coreg_boldref": {
+      "entities": { "datatype": "func", "desc": "coreg", "suffix": "boldref" },
+      "cardinality": "single"
+    }
+  },
+  "transforms": {
+    "hmc": {
+      "entities": { "from": "orig", "to": "boldref", "mode": "image", "suffix": "xfm" },
+      "cardinality": "single"
+    },
+    "boldref2anat": {
+      "entities": {
+        "from": "boldref",
+        "to": ["anat", "T1w", "T2w"],
+        "mode": "image",
+        "desc": "coreg",
+        "suffix": "xfm"
+      },
+      "cardinality": "single"
+    },
+    "boldref2fmap": {
+      "entities": {
+        "from": "boldref",
+        "to": "{fieldmap_id}",
+        "mode": "image",
+        "desc": "*none*",
+        "suffix": "xfm"
+      },
+      "cardinality": "list"
+    }
+  }
+}

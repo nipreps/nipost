@@ -1,0 +1,157 @@
+# tests/bids/test_collect_derivatives.py
+import json
+
+import pytest
+
+pytest.importorskip('bids')
+
+
+def _write(path, **entities):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('')
+    return path
+
+
+@pytest.fixture
+def deriv_root(tmp_path):
+    root = tmp_path / 'deriv'
+    root.mkdir()
+    (root / 'dataset_description.json').write_text(
+        json.dumps(
+            {
+                'Name': 'x',
+                'BIDSVersion': '1.8.0',
+                'DatasetType': 'derivative',
+                'GeneratedBy': [{'Name': 'nipost'}],
+            }
+        )
+    )
+    anat = root / 'sub-01' / 'anat'
+    # dual T1w + T2w preproc (space-qualified case)
+    _write(anat / 'sub-01_desc-preproc_T1w.nii.gz')
+    _write(anat / 'sub-01_desc-preproc_T2w.nii.gz')
+    # ordered TPMs
+    for label in ('GM', 'WM', 'CSF'):
+        _write(anat / f'sub-01_label-{label}_probseg.nii.gz')
+    # surface pair
+    _write(anat / 'sub-01_hemi-L_white.surf.gii')
+    _write(anat / 'sub-01_hemi-R_white.surf.gii')
+    # single mask
+    _write(anat / 'sub-01_desc-ribbon_mask.nii.gz')
+    # coreg + normalization transforms
+    _write(anat / 'sub-01_from-T1w_to-T2w_mode-image_xfm.txt')
+    _write(anat / 'sub-01_from-T1w_to-MNI152NLin2009cAsym_mode-image_xfm.h5')
+    return root
+
+
+def test_collect_covers_case_catalog(deriv_root):
+    from nipost.bids.collect import collect_derivatives
+    from nipost.bids.spec import Query, Spec
+
+    spec = Spec(
+        items={
+            't1w_preproc': Query({'suffix': 'T1w', 'desc': 'preproc'}, 'single'),
+            't2w_preproc': Query({'suffix': 'T2w', 'desc': 'preproc'}, 'single'),
+            'tpms': Query({'suffix': 'probseg'}, 'ordered', labels=['GM', 'WM', 'CSF']),
+            'white': Query({'suffix': 'white', 'extension': '.surf.gii'}, 'pair'),
+            'ribbon': Query({'desc': 'ribbon', 'suffix': 'mask'}, 'single'),
+            't1w2t2w': Query({'from': 'T1w', 'to': 'T2w', 'suffix': 'xfm'}, 'single'),
+        },
+        space_transforms={
+            'forward': Query({'from': 'T1w', 'to': None, 'suffix': 'xfm'}, 'single'),
+        },
+    )
+
+    out = collect_derivatives(
+        deriv_root,
+        spec=spec,
+        subject_id='01',
+        std_spaces=['MNI152NLin2009cAsym'],
+    )
+
+    assert out['t1w_preproc'].endswith('desc-preproc_T1w.nii.gz')
+    assert out['t2w_preproc'].endswith('desc-preproc_T2w.nii.gz')
+    assert [p.split('label-')[1][:2] for p in out['tpms']] == ['GM', 'WM', 'CS']
+    assert len(out['white']) == 2  # sorted L, R
+    assert isinstance(out['ribbon'], str)
+    assert out['t1w2t2w'].endswith('from-T1w_to-T2w_mode-image_xfm.txt')
+    # space-NESTED transform dict (anat case)
+    assert out['transforms']['MNI152NLin2009cAsym']['forward'].endswith(
+        'to-MNI152NLin2009cAsym_mode-image_xfm.h5'
+    )
+
+
+@pytest.fixture
+def func_root(tmp_path):
+    root = tmp_path / 'fderiv'
+    root.mkdir()
+    (root / 'dataset_description.json').write_text(
+        json.dumps(
+            {
+                'Name': 'x',
+                'BIDSVersion': '1.8.0',
+                'DatasetType': 'derivative',
+                'GeneratedBy': [{'Name': 'nipost'}],
+            }
+        )
+    )
+    func = root / 'sub-01' / 'func'
+    _write(func / 'sub-01_task-rest_desc-hmc_boldref.nii.gz')
+    _write(func / 'sub-01_task-rest_from-orig_to-boldref_mode-image_desc-hmc_xfm.txt')
+    _write(func / 'sub-01_task-rest_from-boldref_to-T1w_mode-image_desc-coreg_xfm.txt')
+    _write(func / 'sub-01_task-rest_from-boldref_to-auto00000_mode-image_xfm.txt')
+    return root
+
+
+def test_func_flat_transforms_and_boldref2fmap_list(func_root):
+    from nipost.bids.collect import collect_derivatives
+    from nipost.bids.spec import Query, Spec
+
+    spec = Spec(
+        items={'hmc_boldref': Query({'desc': 'hmc', 'suffix': 'boldref'}, 'single')},
+        transforms={
+            'hmc': Query({'from': 'orig', 'to': 'boldref', 'suffix': 'xfm'}, 'single'),
+            'boldref2anat': Query({'from': 'boldref', 'to': 'T1w', 'suffix': 'xfm'}, 'single'),
+            'boldref2fmap': Query(
+                {'from': 'boldref', 'to': '{fieldmap_id}', 'desc': '*none*', 'suffix': 'xfm'},
+                'list',
+            ),
+        },
+    )
+    # Called WITHOUT fieldmap_id, exactly as the notebook does. boldref2fmap must
+    # return only the fmap transform (desc absent), NOT the desc-coreg file.
+    out = collect_derivatives(func_root, spec=spec, subject_id='01', entities={'task': 'rest'})
+
+    # FLAT transform dict (no std_spaces): keys sit directly under 'transforms'
+    assert isinstance(out['transforms']['hmc'], str)
+    assert out['transforms']['hmc'].endswith('desc-hmc_xfm.txt')
+    assert isinstance(out['transforms']['boldref2anat'], str)
+    assert 'desc-coreg' in out['transforms']['boldref2anat']
+    # boldref2fmap is a LIST (notebook indexes [0]); the desc-coreg file is excluded
+    assert isinstance(out['transforms']['boldref2fmap'], list)
+    assert len(out['transforms']['boldref2fmap']) == 1
+    assert out['transforms']['boldref2fmap'][0].endswith('to-auto00000_mode-image_xfm.txt')
+    assert 'desc-coreg' not in out['transforms']['boldref2fmap'][0]
+
+
+def test_list_valued_entities(deriv_root):
+    from nipost.bids.collect import collect_derivatives
+    from nipost.bids.spec import Query, Spec
+
+    spec = Spec(
+        items={'preproc': Query({'suffix': ['T1w', 'T2w'], 'desc': 'preproc'}, 'optional')}
+    )
+    out = collect_derivatives(deriv_root, spec=spec, subject_id='01')
+    assert len(out['preproc']) == 2  # matches both T1w and T2w
+
+
+def test_cohort_substitution():
+    from nipost.bids.spec import substitute_space
+
+    assert substitute_space('MNIInfant:cohort-1') == 'MNIInfant+1'
+
+
+def test_fieldmap_id_sanitized():
+    from nipost.bids.spec import sanitize_fieldmap_id
+
+    assert sanitize_fieldmap_id('auto_00000') == 'auto00000'
