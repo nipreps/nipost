@@ -111,7 +111,7 @@ async def resample_series_async(
     mode: str = 'constant',
     cval: float = 0.0,
     prefilter: bool = True,
-    max_concurrent: int = min(os.cpu_count() or 1, 12),
+    max_concurrent: int = min(os.cpu_count(), 12),  # type: ignore[type-var,assignment]
 ) -> np.ndarray:
     """Resample a 4D time series at specified coordinates
 

@@ -58,8 +58,6 @@ module = [
     "scipy.*",
     "bids.*",
     "niworkflows.*",
-    "nilearn.*",
-    "nest_asyncio",
 ]
 ignore_missing_imports = true
 
