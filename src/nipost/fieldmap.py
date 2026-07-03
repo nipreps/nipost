@@ -213,8 +213,7 @@ def reconstruct_fieldmap(
 
     fmap_img.header.set_intent('estimate', name='fieldmap Hz')
     fmap_img.header.set_data_dtype('float32')
-    fmap_data = np.asanyarray(fmap_img.dataobj)
-    fmap_img.header['cal_max'] = max((abs(fmap_data.min()), fmap_data.max()))
+    fmap_img.header['cal_max'] = max((abs(fmap_img.dataobj.min()), fmap_img.dataobj.max()))  # type: ignore[attr-defined]
     fmap_img.header['cal_min'] = -fmap_img.header['cal_max']
 
     return fmap_img
