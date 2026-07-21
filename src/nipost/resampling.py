@@ -12,6 +12,12 @@ from scipy import ndimage as ndi
 
 from nipost._async import worker
 
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    import typing as ty
+    InterpolationOrder = ty.Literal[0, 1, 2, 3, 4, 5]
+    InterpolationMode = ty.Literal["reflect", "grid-mirror", "constant", "grid-constant", "nearest", "mirror", "wrap", "grid-wrap"]
+
 
 def resample_vol(
     data: np.ndarray,
@@ -20,9 +26,9 @@ def resample_vol(
     jacobian: bool,
     hmc_xfm: np.ndarray | None,
     fmap_hz: np.ndarray,
-    output: np.dtype | np.ndarray | str | None = None,
-    order: int = 3,
-    mode: str = 'constant',
+    output: np.dtype | np.ndarray | None = None,
+    order: InterpolationOrder = 3,
+    mode: InterpolationMode = 'grid-constant',
     cval: float = 0.0,
     prefilter: bool = True,
 ) -> np.ndarray:
@@ -107,8 +113,8 @@ async def resample_series_async(
     hmc_xfms: list[np.ndarray] | None,
     fmap_hz: np.ndarray,
     output_dtype: np.dtype | str | None = None,
-    order: int = 3,
-    mode: str = 'constant',
+    order: InterpolationOrder = 3,
+    mode: InterpolationMode = 'grid-constant',
     cval: float = 0.0,
     prefilter: bool = True,
     max_concurrent: int = min(os.cpu_count(), 12),  # type: ignore[type-var,assignment]
@@ -159,6 +165,7 @@ async def resample_series_async(
         The resampled array, with shape ``coordinates.shape[1:] + (N,)``,
         where N is the number of volumes in ``data``.
     """
+    output: np.dtype | None = np.dtype(output_dtype) if output_dtype is not None else None
     if data.ndim == 3:
         return resample_vol(
             data,
@@ -167,7 +174,7 @@ async def resample_series_async(
             jacobian,
             hmc_xfms[0] if hmc_xfms else None,
             fmap_hz,
-            output_dtype,
+            output,
             order,
             mode,
             cval,
@@ -178,7 +185,7 @@ async def resample_series_async(
 
     # Order F ensures individual volumes are contiguous in memory
     # Also matches NIfTI, making final save more efficient
-    out_array = np.zeros(coordinates.shape[1:] + data.shape[-1:], dtype=output_dtype, order='F')
+    out_array = np.zeros(coordinates.shape[1:] + data.shape[-1:], dtype=output, order='F')
 
     tasks = [
         asyncio.create_task(
@@ -216,8 +223,8 @@ def resample_series(
     hmc_xfms: list[np.ndarray] | None,
     fmap_hz: np.ndarray,
     output_dtype: np.dtype | str | None = None,
-    order: int = 3,
-    mode: str = 'constant',
+    order: InterpolationOrder = 3,
+    mode: InterpolationMode = 'grid-constant',
     cval: float = 0.0,
     prefilter: bool = True,
     nthreads: int = 1,
@@ -295,8 +302,8 @@ def resample_image(
     jacobian: bool = True,
     nthreads: int = 1,
     output_dtype: np.dtype | str | None = 'f4',
-    order: int = 3,
-    mode: str = 'constant',
+    order: InterpolationOrder = 3,
+    mode: InterpolationMode = 'grid-constant',
     cval: float = 0.0,
     prefilter: bool = True,
 ) -> nb.Nifti1Image:
