@@ -21,10 +21,15 @@ bids = [
     "pybids >= 0.16",
     "niworkflows >= 1.10",
 ]
+
+[dependency-groups]
 test = [
     "pytest >= 7",
     "pytest-cov >= 4",
-    "mypy >= 1.8",
+]
+types = [
+    "mypy>=2.1.0",
+    "scipy-stubs>=1.15.3.0",
 ]
 
 [tool.hatch.version]
@@ -62,8 +67,18 @@ module = [
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-addopts = "--cov=nipost --cov-report=term-missing"
-testpaths = ["tests"]
+minversion = "6"
+addopts = "--cov --cov-report=term-missing"
+testpaths = ["src", "tests"]
+log_level = "INFO"
+xfail_strict = true
+norecursedirs = [".git"]
+doctest_optionflags = "ALLOW_UNICODE NORMALIZE_WHITESPACE ELLIPSIS"
 
 [tool.coverage.run]
+branch = true
 source = ["nipost", "tests"]
+omit = [
+  "nipost/_version.py"
+
+]
