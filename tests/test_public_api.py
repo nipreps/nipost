@@ -11,3 +11,5 @@ def test_public_symbols_exposed():
         'ensure_positive_cosines',
     ):
         assert hasattr(nipost, name), name
+
+    assert isinstance(nipost.__version__, str)
