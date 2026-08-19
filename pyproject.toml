@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "nipost"
 description = "Minimal-derivatives resampling for the NiPreps post-processing family"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = "Apache-2.0"
 dynamic = ["version"]
 dependencies = [
@@ -26,6 +26,7 @@ bids = [
 test = [
     "pytest >= 7",
     "pytest-cov >= 4",
+    "nilearn >= 0.12.1",
 ]
 types = [
     "mypy>=2.1.0",
