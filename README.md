@@ -3,9 +3,8 @@
 **nipost** is a standalone library for one-shot resampling of fMRIPrep _minimal
 derivatives_ into a target space. It combines head-motion correction (HMC),
 susceptibility distortion correction (SDC), and spatial normalization in a
-**single interpolation step**, avoiding the quality loss that accumulates when
-each stage resamples independently. The approach follows the "Rethinking
-Resampling" design first implemented in fMRIPrep/SDCFlows.
+**single interpolation step**, avoiding accumulation of interpolation errors
+that would occur if each transform were applied sequentially.
 
 ## Installation
 
@@ -19,7 +18,7 @@ For BIDS derivative discovery (`collect_derivatives`, `collect_fieldmaps`):
 pip install 'nipost[bids]'
 ```
 
-**Requires Python ≥ 3.10.**
+**Requires Python ≥ 3.12.**
 
 ## Quick start
 
@@ -30,25 +29,25 @@ from nipost.bids import collect_derivatives, collect_fieldmaps
 from nipost.bids.spec import load_spec
 
 # 1. Discover derivatives from an fMRIPrep output directory
-func = collect_derivatives(deriv_root, spec=load_spec("func"), entities=bold_entities)
+func = collect_derivatives(deriv_root, spec=load_spec('func'), entities=bold_entities)
 anat = collect_derivatives(
-    deriv_root, spec=load_spec("anat"), subject_id=subject, std_spaces=["MNI152NLin2009cAsym"]
+    deriv_root, spec=load_spec('anat'), subject_id=subject, std_spaces=['MNI152NLin2009cAsym']
 )
-fmaps = collect_fieldmaps(deriv_root, entities={"subject": subject})
+fmaps = collect_fieldmaps(deriv_root, entities={'subject': subject})
 
 # 2. Build transform chains (HMC → boldref→anat → anat→std)
 bold2std = load_transforms(
-    [func["transforms"]["hmc"], func["transforms"]["boldref2anat"], anat2std_xfm],
+    [func['transforms']['hmc'], func['transforms']['boldref2anat'], anat2std_xfm],
     inverse=[False],
 )
 fmap2std = load_transforms(
-    [func["transforms"]["boldref2fmap"][0], func["transforms"]["boldref2anat"], anat2std_xfm],
+    [func['transforms']['boldref2fmap'][0], func['transforms']['boldref2anat'], anat2std_xfm],
     inverse=[True, False, False],
 )
 
 # 3. Reconstruct the fieldmap (B-Spline coefficients → Hz image in target space)
-coeff = nb.load(fmaps[fmapid]["coeffs"])
-fmapref = nb.load(fmaps[fmapid]["magnitude"])
+coeff = nb.load(fmaps[fmapid]['coeffs'])
+fmapref = nb.load(fmaps[fmapid]['magnitude'])
 fmap_std = reconstruct_fieldmap([coeff], fmapref, target, fmap2std)
 
 # 4. Resample BOLD in one shot — HMC + SDC + normalization simultaneously
@@ -85,7 +84,7 @@ Requires `pybids` and `niworkflows`.
 
 ## Python version support
 
-nipost supports Python ≥ 3.10.
+nipost supports Python ≥ 3.12.
 
 ## License
 
