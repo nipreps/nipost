@@ -1,4 +1,5 @@
 """In-process resampling of BOLD series (ported from fMRIPrep)."""
+from __future__ import annotations
 
 import asyncio
 import os
@@ -14,9 +15,19 @@ from nipost._async import worker
 
 TYPE_CHECKING = False
 if TYPE_CHECKING:
-    import typing as ty
-    InterpolationOrder = ty.Literal[0, 1, 2, 3, 4, 5]
-    InterpolationMode = ty.Literal["reflect", "grid-mirror", "constant", "grid-constant", "nearest", "mirror", "wrap", "grid-wrap"]
+    from typing import Literal
+
+    InterpolationOrder = Literal[0, 1, 2, 3, 4, 5]
+    InterpolationMode = Literal[
+        'reflect',
+        'grid-mirror',
+        'constant',
+        'grid-constant',
+        'nearest',
+        'mirror',
+        'wrap',
+        'grid-wrap',
+    ]
 
 
 def resample_vol(
@@ -57,7 +68,7 @@ def resample_vol(
         volume into the BOLD reference space. This affine must be in VOX2VOX
         form.
     fmap_hz
-        The fieldmap, sampled to the target space, in Hz
+        The fieldmap, sampled to the target space (at ``coordinates``), in Hz
     output
         The dtype or a pre-allocated array for sampling into the target space.
         If pre-allocated, ``output.shape == coordinates.shape[1:]``.

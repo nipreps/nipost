@@ -39,9 +39,8 @@ def test_demo_reproduces_checksum() -> None:
     import niworkflows.data
 
     from nipost import (
-        ensure_positive_cosines,
-        get_trt,
         load_transforms,
+        prepare_epi,
         reconstruct_fieldmap,
         resample_image,
     )
@@ -98,27 +97,7 @@ def test_demo_reproduces_checksum() -> None:
     coeff_file = fmaps[fmapid]['coeffs']
     fmapref_file = fmaps[fmapid]['magnitude']
 
-    def prepare_bold(
-        bids_file: object,
-    ) -> tuple[nb.Nifti1Image, list[tuple[int, float]]]:
-        bold = nb.load(bids_file)  # type: ignore[arg-type]
-        source, axcodes = ensure_positive_cosines(bold)
-
-        metadata = bids_file.get_metadata()  # type: ignore[attr-defined]
-        trt = get_trt(metadata, bids_file)
-        pe_dir = metadata['PhaseEncodingDirection']
-        pe_axis = 'ijk'.index(pe_dir[0])
-
-        pe_flip = pe_dir.endswith('-')
-        axis_flip = axcodes[pe_axis] in 'LPI'
-
-        pe_info: list[tuple[int, float]] = [
-            (pe_axis, -trt if (axis_flip ^ pe_flip) else trt)
-        ] * source.shape[3]
-
-        return source, pe_info
-
-    bold, pe_info = prepare_bold(bold_file)
+    bold, pe_info = prepare_epi(nb.load(bold_file), bold_file.get_metadata())
     MNI = nli.crop_img(MNI_file, copy_header=True)
     fmapref = nb.load(fmapref_file)
     coeff = nb.load(coeff_file)
@@ -140,7 +119,6 @@ def test_demo_reproduces_checksum() -> None:
         mode='grid-constant',
     )
 
-    # --- Assert checksum ----------------------------------------------------------
     # Data and affine are the important bits
     assert sha256(np.asanyarray(bold_mni.dataobj).tobytes()).hexdigest()[:8] == '2655c92a'
     assert sha256(bold_mni.affine.tobytes()).hexdigest()[:8] == 'c532bd33'
