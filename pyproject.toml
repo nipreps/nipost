@@ -10,16 +10,16 @@ requires-python = ">=3.12"
 license = "Apache-2.0"
 dynamic = ["version"]
 dependencies = [
-    "nitransforms >= 24.0",
-    "numpy >= 1.24",
-    "scipy >= 1.10",
-    "nibabel >= 5.0",
+    "nitransforms >= 25.0.1",
+    "numpy >= 2.2",
+    "scipy >= 1.15",
+    "nibabel >= 5.3",
 ]
 
 [project.optional-dependencies]
 bids = [
-    "pybids >= 0.16",
-    "niworkflows >= 1.10",
+    "pybids >= 0.21",
+    "niworkflows >= 1.14.4",
 ]
 
 [dependency-groups]
