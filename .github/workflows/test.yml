@@ -81,6 +81,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           activate-environment: true
+          # ** globs throw ENOTDIR on dangling symlinks
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
       - name: Display Python version
         run: python -c "import sys; print(sys.version)"
       - name: Install tox
