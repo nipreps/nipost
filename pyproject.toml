@@ -36,6 +36,12 @@ types = [
 [tool.hatch.version]
 source = "vcs"
 
+[tool.hatch.build.targets.sdist]
+exclude = [
+  ".git_archival.txt",  # No longer needed in sdist
+  "tests/data/ds005365*",  # Datalad subdatasets
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/nipost"]
 
