@@ -22,8 +22,28 @@ pytest.importorskip('templateflow')
 
 data = Path(__file__).parent / 'data'
 
+def have_data() -> bool:
+    """Checks whether data are present.
+
+    If the submodule is not checked out or the data are not fetched, this will return False.
+    """
+    sub = 'sub-CISC13877'
+    func_ents = 'task-rest_dir-AP_run-01'
+    return all(
+        (data / file).exists() for file in (
+            f'ds005365/{sub}/func/{sub}_{func_ents}_bold.nii.gz',
+            f'ds005365-fmriprep/{sub}/anat/{sub}_from-T1w_to-MNI152NLin2009cAsym_mode-image_xfm.h5',
+            f'ds005365-fmriprep/{sub}/fmap/{sub}_run-01_fmapid-auto00000_desc-coeff_fieldmap.nii.gz',
+            f'ds005365-fmriprep/{sub}/fmap/{sub}_run-01_fmapid-auto00000_desc-epi_fieldmap.nii.gz',
+            f'ds005365-fmriprep/{sub}/fmap/{sub}_run-01_fmapid-auto00000_desc-preproc_fieldmap.nii.gz',
+            f'ds005365-fmriprep/{sub}/func/{sub}_{func_ents}_from-boldref_to-T1w_mode-image_desc-coreg_xfm.txt',
+            f'ds005365-fmriprep/{sub}/func/{sub}_{func_ents}_from-boldref_to-auto00000_mode-image_xfm.txt',
+            f'ds005365-fmriprep/{sub}/func/{sub}_{func_ents}_from-orig_to-boldref_mode-image_desc-hmc_xfm.txt',
+        )
+    )
+
 pytestmark = pytest.mark.skipif(
-    not (data / 'ds005365-fmriprep').exists(),
+    not have_data(),
     reason='NIPOST_DEMO_ROOT not set or demo DataLad inputs not fetched',
 )
 
