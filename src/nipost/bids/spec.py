@@ -12,8 +12,10 @@ import re
 from dataclasses import dataclass, field
 from importlib.resources import files
 from pathlib import Path
+from typing import Literal, get_args
 
-Cardinality = str  # one of: 'single', 'list', 'pair', 'ordered'
+Cardinality = Literal['single', 'list', 'pair', 'ordered']
+_CARDINALITIES = get_args(Cardinality)
 
 
 @dataclass
@@ -69,15 +71,31 @@ def _query_from_dict(raw: dict) -> Query:
     """Build a :class:`Query` from its JSON form.
 
     Accepts either ``{"entities": {...}}`` (sugar for a single alternative) or
-    ``{"alternatives": [{...}, ...]}``, but not both and not neither.
+    ``{"alternatives": [{...}, ...]}``, but not both and not neither. An empty
+    ``alternatives`` list is rejected too: it would otherwise silently mean
+    "this key is never present" (``_lookup`` loops zero times over it).
+
+    ``cardinality`` is validated against the permitted set here, at load
+    time, rather than left to surface as a ``ValueError`` from deep inside a
+    layout query the first time that key is actually reached.
     """
     entities = raw.get('entities')
     alternatives = raw.get('alternatives')
     if (entities is None) == (alternatives is None):
         raise ValueError("A query needs exactly one of 'entities' or 'alternatives'")
+    if alternatives is not None and not alternatives:
+        raise ValueError("A query's 'alternatives' list must not be empty")
+    cardinality = raw.get('cardinality', 'single')
+    if cardinality not in _CARDINALITIES:
+        raise ValueError(f'Unknown cardinality {cardinality!r}; must be one of {_CARDINALITIES}')
+    if entities is not None:
+        alts = [entities]
+    else:
+        assert alternatives is not None
+        alts = alternatives
     return Query(
-        alternatives=[entities] if entities is not None else alternatives,  # type: ignore[arg-type]
-        cardinality=raw.get('cardinality', 'single'),
+        alternatives=alts,
+        cardinality=cardinality,
         labels=raw.get('labels'),
         scope=raw.get('scope'),
     )

@@ -14,6 +14,35 @@ from nipost.bids._layout import get_layout
 from nipost.bids.spec import Query as SpecQuery
 from nipost.bids.spec import Spec, _query_from_dict, sanitize_fieldmap_id, substitute_space
 
+_PLACEHOLDER_RE = re.compile(r'^\{.+\}$')
+_DROP = object()  # sentinel: this value contributes no constraint
+
+
+def _resolve_value(value, fieldmap_id: str | None, space: str | None):
+    """Resolve one entity value — a scalar, or a single member of a value list.
+
+    - ``None`` becomes PyBIDS ``Query.NONE``: the entity must be ABSENT.
+    - ``'{fieldmap_id}'`` is sanitized and substituted; when no ``fieldmap_id``
+      was given, ``_DROP`` is returned so the caller can drop the constraint
+      (or just this member, for a list) rather than matching the literal string.
+    - ``'{space}'`` is substituted with the standard space being iterated
+      (after cohort conversion). It is only meaningful for
+      ``space_transforms`` queries.
+    - Any other ``{...}``-shaped string is an unrecognized placeholder and is
+      rejected, rather than silently passed through to PyBIDS unresolved.
+    """
+    if value is None:
+        return Query.NONE
+    if value == '{fieldmap_id}':
+        return _DROP if fieldmap_id is None else sanitize_fieldmap_id(fieldmap_id)
+    if value == '{space}':
+        if space is None:
+            raise ValueError("The '{space}' placeholder is only valid in space_transforms queries")
+        return substitute_space(space)
+    if isinstance(value, str) and _PLACEHOLDER_RE.match(value):
+        raise ValueError(f'Unrecognized placeholder {value!r}')
+    return value
+
 
 def _resolve(
     alt: dict,
@@ -24,35 +53,29 @@ def _resolve(
 ) -> dict:
     """Build a PyBIDS filter dict from one alternative.
 
-    Spec-declared entities override caller-supplied ones.
-
-    - ``None`` (scalar, or a member of a value list) becomes PyBIDS
-      ``Query.NONE``: the entity must be ABSENT. To leave an entity
-      unconstrained, omit it.
-    - ``'{fieldmap_id}'`` is sanitized and substituted; when no ``fieldmap_id``
-      was given the constraint is dropped so the query matches any value.
-    - ``'{space}'`` is substituted with the standard space being iterated
-      (after cohort conversion). It is only meaningful for
-      ``space_transforms`` queries.
+    Spec-declared entities override caller-supplied ones. Each value — scalar
+    or a member of a value list — is resolved by :func:`_resolve_value`, so
+    the two positions cannot drift apart. A scalar that resolves to nothing
+    (an unmatched ``'{fieldmap_id}'``) drops the whole constraint; a list
+    member that resolves to nothing is dropped from the list, and if that
+    empties the list, the whole constraint is dropped too rather than passing
+    ``[]`` to PyBIDS (which would match nothing).
     """
     merged = {**_scoped(base, scope), **alt}
     out: dict = {}
     for key, value in merged.items():
-        if value is None:
-            out[key] = Query.NONE
-        elif value == '{fieldmap_id}':
-            if fieldmap_id is not None:
-                out[key] = sanitize_fieldmap_id(fieldmap_id)
-        elif value == '{space}':
-            if space is None:
-                raise ValueError(
-                    "The '{space}' placeholder is only valid in space_transforms queries"
-                )
-            out[key] = substitute_space(space)
-        elif isinstance(value, list):
-            out[key] = [Query.NONE if item is None else item for item in value]
+        if isinstance(value, list):
+            resolved = [
+                item
+                for item in (_resolve_value(member, fieldmap_id, space) for member in value)
+                if item is not _DROP
+            ]
+            if resolved:
+                out[key] = resolved
         else:
-            out[key] = value
+            resolved = _resolve_value(value, fieldmap_id, space)
+            if resolved is not _DROP:
+                out[key] = resolved
     return out
 
 
