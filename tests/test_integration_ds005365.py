@@ -114,20 +114,20 @@ def test_demo_reproduces_checksum() -> None:
     )
     fmapid = deriv_layout.files[boldref2fmap_xfm].entities['to']
 
-    coeff_file = fmaps[fmapid]['coeffs']
+    coeff_files = fmaps[fmapid]['coeffs']
     fmapref_file = fmaps[fmapid]['magnitude']
 
     bold, pe_info = prepare_epi(nb.load(bold_file), bold_file.get_metadata())
     MNI = nli.crop_img(MNI_file, copy_header=True)
     fmapref = nb.load(fmapref_file)
-    coeff = nb.load(coeff_file)
+    coeffs = [nb.load(path) for path in coeff_files]
 
     bold2std = load_transforms(
         bold2std_xfms, inverse=[False]
     )  # single-element inverse list broadcasts to all transforms in the chain
     fmap2std = load_transforms(fmap2std_xfms, inverse=fmap2std_inv)
 
-    fmap_std = reconstruct_fieldmap([coeff], fmapref, MNI, fmap2std)
+    fmap_std = reconstruct_fieldmap(coeffs, fmapref, MNI, fmap2std)
 
     bold_mni = resample_image(
         source=bold,

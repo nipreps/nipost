@@ -1,18 +1,29 @@
 {
   "fieldmap": {
-    "entities": { "datatype": "fmap", "desc": "preproc", "suffix": "fieldmap" },
+    "entities": {
+      "datatype": "fmap",
+      "desc": "preproc",
+      "suffix": "fieldmap",
+      "extension": [".nii.gz", ".nii"]
+    },
     "cardinality": "single"
   },
   "coeffs": {
     "entities": {
       "datatype": "fmap",
       "desc": ["coeff", "coeff0", "coeff1"],
-      "suffix": "fieldmap"
+      "suffix": "fieldmap",
+      "extension": [".nii.gz", ".nii"]
     },
-    "cardinality": "single"
+    "cardinality": "list"
   },
   "magnitude": {
-    "entities": { "datatype": "fmap", "desc": "epi", "suffix": "fieldmap" },
+    "entities": {
+      "datatype": "fmap",
+      "desc": "epi",
+      "suffix": "fieldmap",
+      "extension": [".nii.gz", ".nii"]
+    },
     "cardinality": "single"
   }
 }

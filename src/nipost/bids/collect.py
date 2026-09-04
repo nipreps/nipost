@@ -157,8 +157,9 @@ def collect_fieldmaps(
     """Collect fieldmap derivatives grouped by fieldmap id.
 
     Returns a dict keyed by fmapid (e.g. ``auto00000``), each value being a
-    dict with keys ``fieldmap``, ``coeffs``, and ``magnitude`` (scalars when
-    cardinality is ``single``).
+    dict with keys ``fieldmap``, ``magnitude`` (scalar paths) and ``coeffs``
+    (a list with one entry per B-spline level, which is what
+    :func:`nipost.reconstruct_fieldmap` expects).
     """
     if spec is None:
         raw = json.loads((_pkg_files('nipost.bids.data') / 'fmap.json').read_text())

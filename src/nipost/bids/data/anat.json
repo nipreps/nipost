@@ -1,28 +1,57 @@
 {
   "items": {
     "t1w_preproc": {
-      "entities": { "datatype": "anat", "suffix": "T1w", "desc": "preproc" },
+      "entities": {
+        "datatype": "anat",
+        "suffix": "T1w",
+        "desc": "preproc",
+        "extension": [".nii.gz", ".nii"]
+      },
       "cardinality": "single"
     },
     "t2w_preproc": {
-      "entities": { "datatype": "anat", "suffix": "T2w", "desc": "preproc" },
+      "entities": {
+        "datatype": "anat",
+        "suffix": "T2w",
+        "desc": "preproc",
+        "extension": [".nii.gz", ".nii"]
+      },
       "cardinality": "single"
     },
     "mask": {
-      "entities": { "datatype": "anat", "suffix": "mask", "desc": "brain" },
+      "entities": {
+        "datatype": "anat",
+        "suffix": "mask",
+        "desc": "brain",
+        "extension": [".nii.gz", ".nii"]
+      },
       "cardinality": "single"
     },
     "dseg": {
-      "entities": { "datatype": "anat", "suffix": "dseg", "desc": null },
+      "entities": {
+        "datatype": "anat",
+        "suffix": "dseg",
+        "desc": null,
+        "extension": [".nii.gz", ".nii"]
+      },
       "cardinality": "single"
     },
     "tpms": {
-      "entities": { "datatype": "anat", "suffix": "probseg" },
+      "entities": {
+        "datatype": "anat",
+        "suffix": "probseg",
+        "extension": [".nii.gz", ".nii"]
+      },
       "cardinality": "ordered",
       "labels": ["GM", "WM", "CSF"]
     },
     "anat_ribbon": {
-      "entities": { "datatype": "anat", "desc": "ribbon", "suffix": "mask" },
+      "entities": {
+        "datatype": "anat",
+        "desc": "ribbon",
+        "suffix": "mask",
+        "extension": [".nii.gz", ".nii"]
+      },
       "cardinality": "single"
     }
   },
