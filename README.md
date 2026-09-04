@@ -56,16 +56,20 @@ bold2std = load_transforms(
     [transforms['hmc'], *boldref2anat, anat2std_xfm],
     inverse=[False],
 )
-fmap2std = load_transforms(
-    [transforms['run2fmap'][0], *boldref2anat, anat2std_xfm],
-    inverse=[True, *[False] * (len(boldref2anat) + 1)],
-)
 
 # 3. Reconstruct the fieldmap (B-Spline coefficients → Hz image in target space)
-# 'coeffs' is always a list: one entry per B-Spline level.
-coeffs = [nb.load(path) for path in fmaps[fmapid]['coeffs']]
-fmapref = nb.load(fmaps[fmapid]['magnitude'])
-fmap_std = reconstruct_fieldmap(coeffs, fmapref, target, fmap2std)
+# run2fmap is a list; it is [] on a dataset with no fieldmap (SDC skipped),
+# so index it only after checking it is non-empty.
+fmap_std = None
+if transforms['run2fmap']:
+    fmap2std = load_transforms(
+        [transforms['run2fmap'][0], *boldref2anat, anat2std_xfm],
+        inverse=[True, *[False] * (len(boldref2anat) + 1)],
+    )
+    # 'coeffs' is always a list: one entry per B-Spline level.
+    coeffs = [nb.load(path) for path in fmaps[fmapid]['coeffs']]
+    fmapref = nb.load(fmaps[fmapid]['magnitude'])
+    fmap_std = reconstruct_fieldmap(coeffs, fmapref, target, fmap2std)
 
 # 4. Resample BOLD in one shot — HMC + SDC + normalization simultaneously
 bold_mni = resample_image(
@@ -125,16 +129,25 @@ A spec is JSON with up to three sections — `items` (flat results),
   for derivatives written once per session or subject, which carry no
   run-level entities.
 - **`cardinality`** — `single` (scalar path; key omitted when absent, raises on
-  2+ matches), `list` (always a list), `pair` (sorted 2-list), or `ordered`
-  (ordered by the `labels` field).
+  2+ matches), `list` (always a list, possibly empty; raises on nothing since
+  absence isn't ambiguity), `pair` (sorted 2-list, or `None` below 2 matches,
+  raises on 3+), or `ordered` (ordered by the `labels` field, raises if a
+  label matches more than once). `list` and `pair` results are natural-sorted
+  by path — callers such as `nipost.reconstruct_fieldmap` depend on that
+  ordering, since it reads `coefficients[-1]` as the finest B-spline level.
 - **Entity values** — `null` means the entity must be **absent**; omit the key
   to leave it unconstrained. `"{fieldmap_id}"` and `"{space}"` are substituted
-  from the corresponding argument.
+  from the corresponding argument, in a scalar value or inside a value list.
+- **`fmap.json`** is not a spec in this sense: it is a flat mapping of query
+  names straight to query dicts, with none of the three top-level sections, so
+  `load_spec` cannot load it. `collect_fieldmaps` loads it itself.
 
 The bundled `func` spec collects `hmc_boldref`, `run_boldref`,
 `session_boldref`, `subject_boldref`, and the transforms `hmc`, `run2anat`,
 `run2fmap`, `run2session`, `run2subject`, `session2anat`, `subject2anat`.
-Absent items simply omit their key.
+Absent items simply omit their key; `run2fmap` (cardinality `list`) is the
+exception — it is always present, but may be `[]` on a dataset with no
+fieldmap.
 
 ## Python version support
 
