@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 from importlib.resources import files as _pkg_files
 from pathlib import Path
 
@@ -82,12 +83,19 @@ def _lookup(
     return _cardinality(key, query, [])
 
 
+def _natural_key(path: str) -> list:
+    """Sort key ordering embedded integers numerically, so coeff2 precedes coeff10."""
+    return [int(part) if part.isdigit() else part for part in re.split(r'(\d+)', path)]
+
+
 def _cardinality(key: str, query: SpecQuery, files: list) -> str | list | None:
     """Reduce a list of BIDSFile objects to the shape declared by the query.
 
     Absence is never an error — precomputed derivatives are whatever exists,
     and a missing item simply omits its key. Ambiguity is an error: a scalar
-    item matching more than one file means a malformed dataset.
+    item matching more than one file means a malformed dataset. ``'list'``
+    results are returned in natural-sorted path order, because callers such
+    as :func:`nipost.reconstruct_fieldmap` depend on position.
     """
     paths = [f.path for f in files]
     card = query.cardinality
@@ -96,7 +104,7 @@ def _cardinality(key: str, query: SpecQuery, files: list) -> str | list | None:
             raise ValueError(f'{key!r}: expected at most one match, got {len(paths)}: {paths}')
         return paths[0] if paths else None
     if card == 'list':
-        return paths
+        return sorted(paths, key=_natural_key)
     if card == 'pair':
         return sorted(paths) if len(paths) == 2 else None
     if card == 'ordered':
