@@ -79,6 +79,10 @@ jobs:
         with:
           submodules: true
           fetch-depth: 0
+      - name: Set git user
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "none@example.com"
       - name: Setup uv and Python ${{ matrix.python-version }}
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
