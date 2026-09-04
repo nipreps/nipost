@@ -1,76 +1,61 @@
 items:
   t1w_preproc:
     entities:
-      datatype: anat
-      suffix: T1w
-      desc: preproc
-      space: null
-      extension:
-        - .nii.gz
-        - .nii
+      - datatype: anat
+        suffix: T1w
+        desc: preproc
+        space: null
+        extension: [.nii.gz, .nii]
     cardinality: single
   t2w_preproc:
     entities:
-      datatype: anat
-      suffix: T2w
-      desc: preproc
-      space: null
-      extension:
-        - .nii.gz
-        - .nii
+      - datatype: anat
+        suffix: T2w
+        desc: preproc
+        space: null
+        extension: [.nii.gz, .nii]
     cardinality: single
   mask:
     entities:
-      datatype: anat
-      suffix: mask
-      desc: brain
-      space: null
-      extension:
-        - .nii.gz
-        - .nii
+      - datatype: anat
+        suffix: mask
+        desc: brain
+        space: null
+        extension: [.nii.gz, .nii]
     cardinality: single
   dseg:
     entities:
-      datatype: anat
-      suffix: dseg
-      desc: null
-      space: null
-      extension:
-        - .nii.gz
-        - .nii
+      - datatype: anat
+        suffix: dseg
+        desc: null
+        space: null
+        extension: [.nii.gz, .nii]
     cardinality: single
   tpms:
     entities:
-      datatype: anat
-      suffix: probseg
-      space: null
-      extension:
-        - .nii.gz
-        - .nii
+      - datatype: anat
+        suffix: probseg
+        space: null
+        extension: [.nii.gz, .nii]
     cardinality: ordered
-    labels:
-      - GM
-      - WM
-      - CSF
+    labels: [GM, WM, CSF]
   anat_ribbon:
     entities:
-      datatype: anat
-      desc: ribbon
-      suffix: mask
-      extension:
-        - .nii.gz
-        - .nii
+      - datatype: anat
+        desc: ribbon
+        suffix: mask
+        extension: [.nii.gz, .nii]
     cardinality: single
 space_transforms:
   forward:
     entities:
-      from: T1w
-      to: '{space}'
-      suffix: xfm
+      - from: T1w
+        to: '{space}'
+        suffix: xfm
     cardinality: single
   reverse:
     entities:
-      from: '{space}'
-      to: T1w
-      suffix: xfm
+      - from: '{space}'
+        to: T1w
+        suffix: xfm
     cardinality: single

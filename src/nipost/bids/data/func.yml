@@ -1,64 +1,49 @@
 items:
   hmc_boldref:
-    alternatives:
+    entities:
       - datatype: func
         space: orig
         desc: hmc
         suffix: boldref
-        extension:
-          - .nii.gz
-          - .nii
+        extension: [.nii.gz, .nii]
       - datatype: func
         space: null
         desc: hmc
         suffix: boldref
-        extension:
-          - .nii.gz
-          - .nii
+        extension: [.nii.gz, .nii]
     cardinality: single
   run_boldref:
-    alternatives:
+    entities:
       - datatype: func
         space: run
         desc: null
         suffix: boldref
-        extension:
-          - .nii.gz
-          - .nii
+        extension: [.nii.gz, .nii]
       - datatype: func
         space: null
         desc: coreg
         suffix: boldref
-        extension:
-          - .nii.gz
-          - .nii
+        extension: [.nii.gz, .nii]
     cardinality: single
   session_boldref:
-    alternatives:
+    entities:
       - datatype: func
         space: session
         suffix: boldref
-        extension:
-          - .nii.gz
-          - .nii
-    scope:
-      - subject
-      - session
+        extension: [.nii.gz, .nii]
+    scope: [subject, session]
     cardinality: single
   subject_boldref:
-    alternatives:
+    entities:
       - datatype: func
         space: subject
         suffix: boldref
-        extension:
-          - .nii.gz
-          - .nii
-    scope:
-      - subject
+        extension: [.nii.gz, .nii]
+    scope: [subject]
     cardinality: single
 transforms:
   hmc:
-    alternatives:
+    entities:
       - datatype: func
         from: orig
         to: run
@@ -73,28 +58,22 @@ transforms:
         extension: .txt
     cardinality: single
   run2anat:
-    alternatives:
+    entities:
       - datatype: func
         from: run
-        to:
-          - anat
-          - T1w
-          - T2w
+        to: [anat, T1w, T2w]
         mode: image
         suffix: xfm
         extension: .txt
       - datatype: func
         from: boldref
-        to:
-          - anat
-          - T1w
-          - T2w
+        to: [anat, T1w, T2w]
         mode: image
         suffix: xfm
         extension: .txt
     cardinality: single
   run2fmap:
-    alternatives:
+    entities:
       - datatype: func
         from: run
         to: '{fieldmap_id}'
@@ -111,7 +90,7 @@ transforms:
         extension: .txt
     cardinality: list
   run2session:
-    alternatives:
+    entities:
       - datatype: func
         from: run
         to: session
@@ -121,7 +100,7 @@ transforms:
         extension: .txt
     cardinality: single
   run2subject:
-    alternatives:
+    entities:
       - datatype: func
         from: run
         to: subject
@@ -131,31 +110,22 @@ transforms:
         extension: .txt
     cardinality: single
   session2anat:
-    alternatives:
+    entities:
       - datatype: func
         from: session
-        to:
-          - anat
-          - T1w
-          - T2w
+        to: [anat, T1w, T2w]
         mode: image
         suffix: xfm
         extension: .txt
-    scope:
-      - subject
-      - session
+    scope: [subject, session]
     cardinality: single
   subject2anat:
-    alternatives:
+    entities:
       - datatype: func
         from: subject
-        to:
-          - anat
-          - T1w
-          - T2w
+        to: [anat, T1w, T2w]
         mode: image
         suffix: xfm
         extension: .txt
-    scope:
-      - subject
+    scope: [subject]
     cardinality: single
