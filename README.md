@@ -105,13 +105,13 @@ Requires `pybids` and `niworkflows`.
 
 ### Spec schema
 
-A spec is JSON with up to three sections — `items` (flat results),
+A spec is YAML/JSON with up to three sections — `items` (flat results),
 `transforms` (flat, under `transforms`), and `space_transforms` (nested under
 `transforms[space]`). Each entry is a query:
 
-```json
+```yaml
 {
-  "alternatives": [
+  "entities": [
     { "space": "run", "suffix": "boldref" },
     { "desc": "coreg", "suffix": "boldref" }
   ],
@@ -120,10 +120,10 @@ A spec is JSON with up to three sections — `items` (flat results),
 }
 ```
 
-- **`alternatives`** — ordered entity dicts describing one logical item under
+- **`entities`** — ordered entity dicts describing one logical item under
   different naming schemes. The first alternative that matches anything is
   used; cardinality applies to that alternative alone, never to a union. Put
-  current naming first. `"entities": {...}` is sugar for a single alternative.
+  current naming first.
 - **`scope`** — allowlist of caller-supplied entity names the query accepts;
   everything else the caller passed is dropped. Omit it to accept all. Needed
   for derivatives written once per session or subject, which carry no
