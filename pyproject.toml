@@ -23,6 +23,11 @@ bids = [
 ]
 
 [dependency-groups]
+datalad = [
+    "datalad>=1.6.2",
+    "datalad-next>=1.6.0",
+    "git-annex>=10.20260717",
+]
 test = [
     "pytest >= 7",
     "pytest-cov >= 4",
