@@ -60,7 +60,7 @@ def _lookup(
     """
     scoped = _scoped(base, query.scope)
     for alt in query.alternatives:
-        found = layout.get(**_clean({**alt, **scoped}, fieldmap_id))
+        found = layout.get(**_clean({**scoped, **alt}, fieldmap_id))
         if found:
             return _cardinality(query, found)
     return _cardinality(query, [])
