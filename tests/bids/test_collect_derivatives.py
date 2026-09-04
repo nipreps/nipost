@@ -58,7 +58,7 @@ def test_collect_covers_case_catalog(deriv_root):
             't1w2t2w': Query([{'from': 'T1w', 'to': 'T2w', 'suffix': 'xfm'}], 'single'),
         },
         space_transforms={
-            'forward': Query([{'from': 'T1w', 'to': None, 'suffix': 'xfm'}], 'single'),
+            'forward': Query([{'from': 'T1w', 'to': '{space}', 'suffix': 'xfm'}], 'single'),
         },
     )
 
@@ -113,7 +113,7 @@ def test_func_flat_transforms_and_boldref2fmap_list(func_root):
             'hmc': Query([{'from': 'orig', 'to': 'boldref', 'suffix': 'xfm'}], 'single'),
             'boldref2anat': Query([{'from': 'boldref', 'to': 'T1w', 'suffix': 'xfm'}], 'single'),
             'boldref2fmap': Query(
-                [{'from': 'boldref', 'to': '{fieldmap_id}', 'desc': '*none*', 'suffix': 'xfm'}],
+                [{'from': 'boldref', 'to': '{fieldmap_id}', 'desc': None, 'suffix': 'xfm'}],
                 'list',
             ),
         },
@@ -173,7 +173,7 @@ def test_boldref2fmap_list_zero_matches(func_root):
                     {
                         'from': 'boldref',
                         'to': '{fieldmap_id}',
-                        'desc': '*none*',
+                        'desc': None,
                         'suffix': 'xfm',
                     }
                 ],
@@ -349,3 +349,89 @@ def test_spec_entities_override_caller_entities(empty_root):
     )
 
     assert out['run_boldref'].endswith('space-run_boldref.nii.gz')
+
+
+def test_none_requires_entity_to_be_absent(empty_root):
+    """`None` is PyBIDS Query.NONE: the entity must be ABSENT, not unconstrained."""
+    from nipost.bids.collect import collect_derivatives
+    from nipost.bids.spec import Query, Spec
+
+    anat = empty_root / 'sub-01' / 'anat'
+    _write(anat / 'sub-01_dseg.nii.gz')
+    _write(anat / 'sub-01_desc-aseg_dseg.nii.gz')
+
+    spec = Spec(items={'dseg': Query([{'suffix': 'dseg', 'desc': None}], 'single')})
+    out = collect_derivatives(empty_root, spec=spec, subject_id='01')
+
+    assert out['dseg'].endswith('sub-01_dseg.nii.gz')
+
+
+def test_none_inside_a_value_list_means_absent(empty_root):
+    from nipost.bids.collect import collect_derivatives
+    from nipost.bids.spec import Query, Spec
+
+    func = empty_root / 'sub-01' / 'func'
+    _write(func / 'sub-01_task-rest_space-run_boldref.nii.gz')
+    _write(func / 'sub-01_task-rest_boldref.nii.gz')
+    _write(func / 'sub-01_task-rest_space-session_boldref.nii.gz')
+
+    spec = Spec(
+        items={
+            'either': Query([{'space': ['run', None], 'suffix': 'boldref'}], 'list'),
+        }
+    )
+    out = collect_derivatives(empty_root, spec=spec, subject_id='01', entities={'task': 'rest'})
+
+    names = sorted(p.rsplit('/', 1)[-1] for p in out['either'])
+    assert names == [
+        'sub-01_task-rest_boldref.nii.gz',
+        'sub-01_task-rest_space-run_boldref.nii.gz',
+    ]
+
+
+def test_space_placeholder_substitutes(deriv_root):
+    from nipost.bids.collect import collect_derivatives
+    from nipost.bids.spec import Query, Spec
+
+    spec = Spec(
+        space_transforms={
+            'forward': Query([{'from': 'T1w', 'to': '{space}', 'suffix': 'xfm'}], 'single'),
+        }
+    )
+    out = collect_derivatives(
+        deriv_root, spec=spec, subject_id='01', std_spaces=['MNI152NLin2009cAsym']
+    )
+
+    assert out['transforms']['MNI152NLin2009cAsym']['forward'].endswith(
+        'to-MNI152NLin2009cAsym_mode-image_xfm.h5'
+    )
+
+
+def test_space_placeholder_substitutes_cohort(empty_root):
+    from nipost.bids.collect import collect_derivatives
+    from nipost.bids.spec import Query, Spec
+
+    _write(empty_root / 'sub-01' / 'anat' / 'sub-01_from-T1w_to-MNIInfant+1_mode-image_xfm.h5')
+
+    spec = Spec(
+        space_transforms={
+            'forward': Query([{'from': 'T1w', 'to': '{space}', 'suffix': 'xfm'}], 'single'),
+        }
+    )
+    out = collect_derivatives(
+        empty_root, spec=spec, subject_id='01', std_spaces=['MNIInfant:cohort-1']
+    )
+
+    assert out['transforms']['MNIInfant:cohort-1']['forward'].endswith(
+        'to-MNIInfant+1_mode-image_xfm.h5'
+    )
+
+
+def test_space_placeholder_outside_space_transforms_raises(empty_root):
+    from nipost.bids.collect import collect_derivatives
+    from nipost.bids.spec import Query, Spec
+
+    spec = Spec(items={'bad': Query([{'space': '{space}', 'suffix': 'boldref'}], 'single')})
+
+    with pytest.raises(ValueError, match='space_transforms'):
+        collect_derivatives(empty_root, spec=spec, subject_id='01')
