@@ -22,6 +22,7 @@ pytest.importorskip('templateflow')
 
 data = Path(__file__).parent / 'data'
 
+
 def have_data() -> bool:
     """Checks whether data are present.
 
@@ -30,7 +31,8 @@ def have_data() -> bool:
     sub = 'sub-CISC13877'
     func_ents = 'task-rest_dir-AP_run-01'
     return all(
-        (data / file).exists() for file in (
+        (data / file).exists()
+        for file in (
             f'ds005365/{sub}/func/{sub}_{func_ents}_bold.nii.gz',
             f'ds005365-fmriprep/{sub}/anat/{sub}_from-T1w_to-MNI152NLin2009cAsym_mode-image_xfm.h5',
             f'ds005365-fmriprep/{sub}/fmap/{sub}_run-01_fmapid-auto00000_desc-coeff_fieldmap.nii.gz',
@@ -42,6 +44,7 @@ def have_data() -> bool:
         )
     )
 
+
 pytestmark = pytest.mark.skipif(
     not have_data(),
     reason='NIPOST_DEMO_ROOT not set or demo DataLad inputs not fetched',
@@ -51,12 +54,12 @@ pytestmark = pytest.mark.skipif(
 def test_demo_reproduces_checksum() -> None:
     """Reproduce the fmriprep-resampling-demo checksum using only nipost."""
     import nibabel as nb
-    from bids import BIDSLayout
-    from nilearn import image as nli
-    from templateflow import TemplateFlowClient
 
     # Needed for nipreps.json to support nonstandard entities
     import niworkflows.data
+    from bids import BIDSLayout
+    from nilearn import image as nli
+    from templateflow import TemplateFlowClient
 
     from nipost import (
         load_transforms,

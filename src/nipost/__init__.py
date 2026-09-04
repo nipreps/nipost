@@ -10,10 +10,10 @@ from nipost.transforms import load_transforms
 
 __all__ = [
     '__version__',
-    'resample_image',
-    'reconstruct_fieldmap',
-    'prepare_epi',
-    'load_transforms',
-    'get_trt',
     'ensure_positive_cosines',
+    'get_trt',
+    'load_transforms',
+    'prepare_epi',
+    'reconstruct_fieldmap',
+    'resample_image',
 ]
