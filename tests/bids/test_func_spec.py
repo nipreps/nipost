@@ -192,9 +192,22 @@ def test_run2fmap_selects_by_fieldmap_id(tmp_path):
     assert out['transforms']['run2fmap'][0].endswith('to-auto00001_mode-image_desc-fmap_xfm.txt')
 
 
-def test_run2fmap_never_returns_a_coreg_transform(tmp_path):
-    """Called without a fieldmap_id, run2fmap must not pick up boldref->anat."""
-    out = _collect(_dataset(tmp_path / 'd', *CURRENT_RUN))
+@pytest.mark.parametrize(
+    'dataset',
+    [CURRENT_RUN, LEGACY_RUN],
+    ids=['current-naming', 'legacy-naming'],
+)
+def test_run2fmap_never_returns_a_coreg_transform(tmp_path, dataset):
+    """Called without a fieldmap_id, run2fmap must not pick up boldref->anat.
+
+    Under current naming, the first alternative's own entities (desc-fmap,
+    from-run) exclude the coreg transform. Under legacy naming, the first
+    alternative doesn't match at all (no 'run' entity), so the second
+    alternative's ``desc: null`` is what actually does the exclusion —
+    without it, the unconstrained ``to`` (no fieldmap_id given) would let
+    the boldref->T1w coreg transform through too.
+    """
+    out = _collect(_dataset(tmp_path / 'd', *dataset))
 
     for path in out['transforms']['run2fmap']:
         assert 'desc-coreg' not in path
