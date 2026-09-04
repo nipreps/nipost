@@ -14,29 +14,44 @@ from nipost.bids.spec import Query as SpecQuery
 from nipost.bids.spec import Spec, _query_from_dict, sanitize_fieldmap_id, substitute_space
 
 
-def _clean(entities: dict, fieldmap_id: str | None) -> dict:
-    """Resolve dynamic values and drop unconstrained (None) entities.
+def _resolve(
+    alt: dict,
+    base: dict,
+    scope: list[str] | None,
+    fieldmap_id: str | None,
+    space: str | None = None,
+) -> dict:
+    """Build a PyBIDS filter dict from one alternative.
 
-    - ``None`` value: dropped ("no constraint"; also the std-space placeholder
-      after substitution).
-    - ``'*none*'`` value: mapped to PyBIDS ``Query.NONE`` (entity must be
-      ABSENT) — used to exclude e.g. the ``desc-coreg`` transform from the
-      ``boldref2fmap`` query so it is not confused with ``boldref2anat``.
-    - ``'{fieldmap_id}'`` value: sanitized/substituted; if ``fieldmap_id`` is
-      None the constraint is dropped so the query matches any value.
+    Spec-declared entities override caller-supplied ones.
+
+    - ``None`` (scalar, or a member of a value list) becomes PyBIDS
+      ``Query.NONE``: the entity must be ABSENT. To leave an entity
+      unconstrained, omit it.
+    - ``'{fieldmap_id}'`` is sanitized and substituted; when no ``fieldmap_id``
+      was given the constraint is dropped so the query matches any value.
+    - ``'{space}'`` is substituted with the standard space being iterated
+      (after cohort conversion). It is only meaningful for
+      ``space_transforms`` queries.
     """
+    merged = {**_scoped(base, scope), **alt}
     out: dict = {}
-    for key, value in entities.items():
+    for key, value in merged.items():
         if value is None:
-            continue
-        if value == '*none*':
             out[key] = Query.NONE
-            continue
-        if value == '{fieldmap_id}':
+        elif value == '{fieldmap_id}':
             if fieldmap_id is not None:
                 out[key] = sanitize_fieldmap_id(fieldmap_id)
-            continue
-        out[key] = value
+        elif value == '{space}':
+            if space is None:
+                raise ValueError(
+                    "The '{space}' placeholder is only valid in space_transforms queries"
+                )
+            out[key] = substitute_space(space)
+        elif isinstance(value, list):
+            out[key] = [Query.NONE if item is None else item for item in value]
+        else:
+            out[key] = value
     return out
 
 
@@ -52,15 +67,15 @@ def _lookup(
     query: SpecQuery,
     base: dict,
     fieldmap_id: str | None,
+    space: str | None = None,
 ) -> str | list | None:
     """Return the reduced result for the first alternative that matches anything.
 
     If no alternative matches, the cardinality's zero-match outcome is returned
     (``[]`` for ``'list'``, ``None`` otherwise).
     """
-    scoped = _scoped(base, query.scope)
     for alt in query.alternatives:
-        found = layout.get(**_clean({**scoped, **alt}, fieldmap_id))
+        found = layout.get(**_resolve(alt, base, query.scope, fieldmap_id, space))
         if found:
             return _cardinality(query, found)
     return _cardinality(query, [])
@@ -119,18 +134,8 @@ def collect_derivatives(
             transforms[key] = result
     # Space-varying transforms (anat: forward / reverse per std space)
     for space in std_spaces or []:
-        space_entity = substitute_space(space)
         for key, query in spec.space_transforms.items():
-            substituted = SpecQuery(
-                alternatives=[
-                    {k: (space_entity if v is None else v) for k, v in alt.items()}
-                    for alt in query.alternatives
-                ],
-                cardinality=query.cardinality,
-                labels=query.labels,
-                scope=query.scope,
-            )
-            result = _lookup(layout, substituted, base, fieldmap_id)
+            result = _lookup(layout, query, base, fieldmap_id, space)
             if result is not None:
                 transforms.setdefault(space, {})[key] = result
 

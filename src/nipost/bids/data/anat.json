@@ -28,11 +28,11 @@
   },
   "space_transforms": {
     "forward": {
-      "entities": { "from": "T1w", "to": null, "suffix": "xfm" },
+      "entities": { "from": "T1w", "to": "{space}", "suffix": "xfm" },
       "cardinality": "single"
     },
     "reverse": {
-      "entities": { "from": null, "to": "T1w", "suffix": "xfm" },
+      "entities": { "from": "{space}", "to": "T1w", "suffix": "xfm" },
       "cardinality": "single"
     }
   }
