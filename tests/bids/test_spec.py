@@ -54,3 +54,18 @@ def test_bundled_specs_load():
             assert isinstance(query.alternatives, list)
             assert query.alternatives
             assert all(isinstance(alt, dict) for alt in query.alternatives)
+
+
+def test_query_from_dict_rejects_unknown_cardinality():
+    """A typo in a custom spec must surface at load time, not deep in a query."""
+    from nipost.bids.spec import _query_from_dict
+
+    with pytest.raises(ValueError, match='optional'):
+        _query_from_dict({'entities': {'suffix': 'T1w'}, 'cardinality': 'optional'})
+
+
+def test_query_from_dict_rejects_empty_alternatives():
+    from nipost.bids.spec import _query_from_dict
+
+    with pytest.raises(ValueError, match='alternatives'):
+        _query_from_dict({'alternatives': []})

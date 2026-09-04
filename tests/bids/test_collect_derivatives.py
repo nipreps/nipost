@@ -401,6 +401,51 @@ def test_resolve_converts_none_list_members_to_query_none():
     assert resolved['space'] == ['run', PyBIDSQuery.NONE]
 
 
+def test_resolve_substitutes_fieldmap_id_placeholder_inside_a_list():
+    from nipost.bids.collect import _resolve
+
+    resolved = _resolve(
+        {'to': ['{fieldmap_id}', 'auto00000']}, base={}, scope=None, fieldmap_id='auto_00001'
+    )
+
+    assert resolved['to'] == ['auto00001', 'auto00000']
+
+
+def test_resolve_drops_fieldmap_id_placeholder_member_when_missing():
+    """Dropping just the placeholder member is the consistent reading of a list."""
+    from nipost.bids.collect import _resolve
+
+    resolved = _resolve(
+        {'to': ['{fieldmap_id}', 'auto00000']}, base={}, scope=None, fieldmap_id=None
+    )
+
+    assert resolved['to'] == ['auto00000']
+
+
+def test_resolve_drops_whole_constraint_when_list_placeholder_empties_it():
+    """If dropping the placeholder member would empty the list, drop the whole
+    constraint instead of passing `[]` to PyBIDS (which would match nothing)."""
+    from nipost.bids.collect import _resolve
+
+    resolved = _resolve({'to': ['{fieldmap_id}']}, base={}, scope=None, fieldmap_id=None)
+
+    assert 'to' not in resolved
+
+
+def test_resolve_raises_on_unrecognized_placeholder_scalar():
+    from nipost.bids.collect import _resolve
+
+    with pytest.raises(ValueError, match=r'\{foo\}'):
+        _resolve({'desc': '{foo}'}, base={}, scope=None, fieldmap_id=None)
+
+
+def test_resolve_raises_on_unrecognized_placeholder_in_list():
+    from nipost.bids.collect import _resolve
+
+    with pytest.raises(ValueError, match=r'\{foo\}'):
+        _resolve({'to': ['{foo}', 'auto00000']}, base={}, scope=None, fieldmap_id=None)
+
+
 def test_space_placeholder_substitutes(deriv_root):
     from nipost.bids.collect import collect_derivatives
     from nipost.bids.spec import Query, Spec
