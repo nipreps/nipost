@@ -485,6 +485,53 @@ def test_optional_cardinality_is_rejected(deriv_root):
         collect_derivatives(deriv_root, spec=spec, subject_id='01')
 
 
+@pytest.fixture
+def anat_with_std_space_dupes(tmp_path):
+    """fMRIPrep's default output: native anat files plus standard-space copies.
+
+    Regression fixture for the anat spec not constraining ``space``: without
+    ``space: null``, t1w_preproc/t2w_preproc/mask/dseg each match 2 files
+    (native + std-space) and raise, while ``tpms`` (cardinality ``ordered``)
+    silently returns the wrong-resolution std-space probsegs instead.
+    """
+    root = tmp_path / 'deriv'
+    root.mkdir()
+    (root / 'dataset_description.json').write_text(
+        json.dumps(
+            {
+                'Name': 'x',
+                'BIDSVersion': '1.8.0',
+                'DatasetType': 'derivative',
+                'GeneratedBy': [{'Name': 'fMRIPrep'}],
+            }
+        )
+    )
+    anat = root / 'sub-01' / 'anat'
+    for space_suffix in ('', 'space-MNI152NLin2009cAsym_res-2_'):
+        _write(anat / f'sub-01_{space_suffix}desc-preproc_T1w.nii.gz')
+        _write(anat / f'sub-01_{space_suffix}desc-preproc_T2w.nii.gz')
+        _write(anat / f'sub-01_{space_suffix}desc-brain_mask.nii.gz')
+        _write(anat / f'sub-01_{space_suffix}dseg.nii.gz')
+        for label in ('GM', 'WM', 'CSF'):
+            _write(anat / f'sub-01_{space_suffix}label-{label}_probseg.nii.gz')
+    return root
+
+
+def test_anat_spec_prefers_native_over_std_space_dupes(anat_with_std_space_dupes):
+    """The shipped anat spec must resolve to native files, not std-space copies."""
+    from nipost.bids.collect import collect_derivatives
+    from nipost.bids.spec import load_spec
+
+    out = collect_derivatives(anat_with_std_space_dupes, spec=load_spec('anat'), subject_id='01')
+
+    for key in ('t1w_preproc', 't2w_preproc', 'mask', 'dseg'):
+        assert 'space-' not in out[key], f'{key}: expected native file, got {out[key]!r}'
+    assert all('space-' not in p for p in out['tpms']), (
+        f'tpms: expected native files, got {out["tpms"]!r}'
+    )
+    assert [p.rsplit('label-', 1)[1][:2] for p in out['tpms']] == ['GM', 'WM', 'CS']
+
+
 def test_image_queries_ignore_json_sidecars(empty_root):
     """PyBIDS indexes a derivative's sidecar as its own file with the same entities."""
     from nipost.bids.collect import collect_derivatives
