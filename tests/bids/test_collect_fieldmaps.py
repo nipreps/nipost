@@ -119,3 +119,44 @@ def test_collect_fieldmaps_ignores_json_sidecars(tmp_path):
     assert out['auto00000']['coeffs'] == [
         str(fmap / 'sub-01_fmapid-auto00000_desc-coeff_fieldmap.nii.gz')
     ]
+
+
+def test_list_cardinality_is_deterministically_ordered():
+    """reconstruct_fieldmap reads coefficients[-1] as the finest B-spline level.
+
+    _cardinality is a pure reducer, so it is tested directly with a
+    deliberately unsorted input: a real BIDSLayout will not hand us one
+    today, which is exactly why the ordering contract needs pinning here
+    rather than end to end.
+    """
+    from nipost.bids.collect import _cardinality
+    from nipost.bids.spec import Query
+
+    class _StubFile:
+        def __init__(self, path):
+            self.path = path
+            self.entities = {}
+
+    files = [
+        _StubFile('/x/sub-01_desc-coeff10_fieldmap.nii.gz'),
+        _StubFile('/x/sub-01_desc-coeff2_fieldmap.nii.gz'),
+        _StubFile('/x/sub-01_desc-coeff0_fieldmap.nii.gz'),
+    ]
+
+    assert _cardinality('coeffs', Query([{}], 'list'), files) == [
+        '/x/sub-01_desc-coeff0_fieldmap.nii.gz',
+        '/x/sub-01_desc-coeff2_fieldmap.nii.gz',
+        '/x/sub-01_desc-coeff10_fieldmap.nii.gz',
+    ]
+
+
+def test_collect_fieldmaps_orders_bspline_levels(multilevel_fmap_deriv):
+    """The end-to-end shape, on a real layout."""
+    from nipost.bids.collect import collect_fieldmaps
+
+    coeffs = collect_fieldmaps(multilevel_fmap_deriv, {'subject': '01'})['auto00000']['coeffs']
+
+    assert [p.rsplit('desc-', 1)[1] for p in coeffs] == [
+        'coeff0_fieldmap.nii.gz',
+        'coeff1_fieldmap.nii.gz',
+    ]
