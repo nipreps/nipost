@@ -74,7 +74,17 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "6"
-addopts = "--cov --cov-report=term-missing"
+addopts = [
+  "-svx",
+  "-ra",
+  "--strict-config",
+  "--strict-markers",
+  "--doctest-modules",
+  # Config pytest-cov
+  "--cov",
+  "--cov-report", "term-missing",
+  "--cov-report", "xml:cov.xml",
+]
 testpaths = ["src", "tests"]
 log_level = "INFO"
 xfail_strict = true
