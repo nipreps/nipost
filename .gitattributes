@@ -1,0 +1,3 @@
+.git_archival.txt  export-subst
+# Prevent 3-way merges, partial staging
+uv.lock binary merge=binary
