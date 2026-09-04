@@ -1,4 +1,5 @@
 """In-process resampling of BOLD series (ported from fMRIPrep)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -7,7 +8,7 @@ from functools import partial
 
 import nibabel as nb
 import nitransforms as nt
-import nitransforms.resampling  # noqa: F401  (registers nt.resampling.apply)
+import nitransforms.resampling
 import numpy as np
 from scipy import ndimage as ndi
 

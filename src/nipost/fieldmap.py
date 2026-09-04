@@ -4,7 +4,7 @@ from warnings import warn
 
 import nibabel as nb
 import nitransforms as nt
-import nitransforms.resampling  # noqa: F401
+import nitransforms.resampling
 import numpy as np
 from scipy.interpolate import BSpline
 from scipy.sparse import hstack as sparse_hstack
