@@ -79,9 +79,9 @@ def test_demo_reproduces_checksum() -> None:
     bold_file = raw.get(suffix='bold', extension='.nii.gz')[0]
     MNI_file = tf.get(template=template, suffix='mask', desc='brain', resolution='02')
 
+    # Spec-declared entities override these, so the raw source entities
+    # (suffix='bold', extension='.nii.gz') can be passed through as-is.
     bold_entities = bold_file.get_entities()
-    for ent in ('datatype', 'suffix', 'extension'):
-        bold_entities.pop(ent, None)
     subject = bold_entities['subject']
 
     anat = collect_derivatives(
@@ -97,17 +97,30 @@ def test_demo_reproduces_checksum() -> None:
     )
     fmaps = collect_fieldmaps(deriv_root, entities={'subject': subject})
 
-    hmc_xfm = func['transforms']['hmc']
-    boldref2anat_xfm = func['transforms']['boldref2anat']
+    transforms = func['transforms']
     anat2std_xfm = anat['transforms'][template]['forward']
-    bold2std_xfms = [hmc_xfm, boldref2anat_xfm, anat2std_xfm]
 
-    # boldref2fmap is a list; [0] is the actual fmap xfm (no desc entity)
-    boldref2fmap_xfm = func['transforms']['boldref2fmap'][0]
-    fmap2std_xfms = [boldref2fmap_xfm, boldref2anat_xfm, anat2std_xfm]
-    fmap2std_inv = [True, False, False]
+    # Select the boldref->anat leg. ds005365 was preprocessed per-run, so
+    # run2anat is present; a session- or subject-level dataset instead
+    # supplies a run2<level> / <level>2anat pair.
+    if 'run2anat' in transforms:
+        boldref2anat = [transforms['run2anat']]
+    else:
+        level = next(
+            lvl
+            for lvl in ('session', 'subject')
+            if f'run2{lvl}' in transforms and f'{lvl}2anat' in transforms
+        )
+        boldref2anat = [transforms[f'run2{level}'], transforms[f'{level}2anat']]
 
-    # The notebook used: deriv.files[boldref2fmap_xfm].entities['to']
+    bold2std_xfms = [transforms['hmc'], *boldref2anat, anat2std_xfm]
+
+    # run2fmap is a list; [0] is the fieldmap transform
+    run2fmap_xfm = transforms['run2fmap'][0]
+    fmap2std_xfms = [run2fmap_xfm, *boldref2anat, anat2std_xfm]
+    fmap2std_inv = [True, *[False] * (len(boldref2anat) + 1)]
+
+    # The notebook used: deriv.files[run2fmap_xfm].entities['to']
     # We replicate this via BIDSLayout with the nipreps config.
 
     deriv_layout = BIDSLayout(
@@ -115,7 +128,7 @@ def test_demo_reproduces_checksum() -> None:
         config=[niworkflows.data.load('nipreps.json')],
         validate=False,
     )
-    fmapid = deriv_layout.files[boldref2fmap_xfm].entities['to']
+    fmapid = deriv_layout.files[run2fmap_xfm].entities['to']
 
     coeff_files = fmaps[fmapid]['coeffs']
     fmapref_file = fmaps[fmapid]['magnitude']
