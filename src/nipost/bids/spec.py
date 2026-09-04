@@ -7,24 +7,25 @@ fMRIPrep, sMRIPrep, and nibabies io_spec files, without matching them verbatim.
 
 from __future__ import annotations
 
-import json
 import re
-from dataclasses import dataclass, field
 from importlib.resources import files
 from pathlib import Path
-from typing import Literal, get_args
 
-Cardinality = Literal['single', 'list', 'pair', 'ordered']
-_CARDINALITIES = get_args(Cardinality)
+from msgspec import Struct, field, yaml
+
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from typing import Literal
+
+    Cardinality = Literal['single', 'list', 'pair', 'ordered']
 
 
-@dataclass
-class Query:
+class Query(Struct):
     """A single named lookup in a spec.
 
     Parameters
     ----------
-    alternatives
+    entities
         Ordered entity dicts describing the same logical item under different
         naming schemes. The interpreter selects the **first** alternative that
         matches anything; cardinality is applied to that alternative's matches
@@ -43,14 +44,19 @@ class Query:
         reachable from a run-level call.
     """
 
-    alternatives: list[dict]
-    cardinality: Cardinality = 'single'
+    entities: list[dict]
+    cardinality: Cardinality
     labels: list[str] | None = None
     scope: list[str] | None = None
 
+    def __post_init__(self):
+        if not self.entities:
+            raise ValueError("Query must have at least one alternative in 'entities'")
+        if self.cardinality == 'ordered' and not self.labels:
+            raise ValueError("Query with cardinality='ordered' must have non-empty labels")
 
-@dataclass
-class Spec:
+
+class Spec(Struct):
     items: dict[str, Query] = field(default_factory=dict)
     transforms: dict[str, Query] = field(default_factory=dict)  # flat -> out['transforms'][key]
     space_transforms: dict[str, Query] = field(
@@ -67,52 +73,11 @@ def sanitize_fieldmap_id(fieldmap_id: str) -> str:
     return re.sub(r'[^a-zA-Z0-9]', '', fieldmap_id)
 
 
-def _query_from_dict(raw: dict) -> Query:
-    """Build a :class:`Query` from its JSON form.
-
-    Accepts either ``{"entities": {...}}`` (sugar for a single alternative) or
-    ``{"alternatives": [{...}, ...]}``, but not both and not neither. An empty
-    ``alternatives`` list is rejected too: it would otherwise silently mean
-    "this key is never present" (``_lookup`` loops zero times over it).
-
-    ``cardinality`` is validated against the permitted set here, at load
-    time, rather than left to surface as a ``ValueError`` from deep inside a
-    layout query the first time that key is actually reached.
-    """
-    entities = raw.get('entities')
-    alternatives = raw.get('alternatives')
-    if (entities is None) == (alternatives is None):
-        raise ValueError("A query needs exactly one of 'entities' or 'alternatives'")
-    if alternatives is not None and not alternatives:
-        raise ValueError("A query's 'alternatives' list must not be empty")
-    cardinality = raw.get('cardinality', 'single')
-    if cardinality not in _CARDINALITIES:
-        raise ValueError(f'Unknown cardinality {cardinality!r}; must be one of {_CARDINALITIES}')
-    if entities is not None:
-        alts = [entities]
-    else:
-        assert alternatives is not None
-        alts = alternatives
-    return Query(
-        alternatives=alts,
-        cardinality=cardinality,
-        labels=raw.get('labels'),
-        scope=raw.get('scope'),
-    )
-
-
 def load_spec(name_or_path: str | Path) -> Spec:
     """Load a bundled spec by name (``anat``/``func``) or from a JSON path."""
     text: str
     if isinstance(name_or_path, str) and name_or_path in ('anat', 'func'):
-        text = (files('nipost.bids.data') / f'{name_or_path}.json').read_text()
+        text = (files('nipost.bids.data') / f'{name_or_path}.yml').read_text()
     else:
         text = Path(name_or_path).read_text()
-    raw = json.loads(text)
-    return Spec(
-        items={k: _query_from_dict(v) for k, v in raw.get('items', {}).items()},
-        transforms={k: _query_from_dict(v) for k, v in raw.get('transforms', {}).items()},
-        space_transforms={
-            k: _query_from_dict(v) for k, v in raw.get('space_transforms', {}).items()
-        },
-    )
+    return yaml.decode(text, type=Spec)
