@@ -92,10 +92,12 @@ def _cardinality(key: str, query: SpecQuery, files: list) -> str | list | None:
     """Reduce a list of BIDSFile objects to the shape declared by the query.
 
     Absence is never an error — precomputed derivatives are whatever exists,
-    and a missing item simply omits its key. Ambiguity is an error: a scalar
-    item matching more than one file means a malformed dataset. ``'list'``
-    results are returned in natural-sorted path order, because callers such
-    as :func:`nipost.reconstruct_fieldmap` depend on position.
+    and a missing item simply omits its key. Ambiguity is always an error: a
+    scalar item matching more than one file means a malformed dataset, and
+    the same holds for ``'pair'`` (3+ matches) and ``'ordered'`` (2+ matches
+    sharing a label). ``'list'`` and ``'pair'`` results are returned in
+    natural-sorted path order, because callers such as
+    :func:`nipost.reconstruct_fieldmap` depend on position.
     """
     paths = [f.path for f in files]
     card = query.cardinality
@@ -106,10 +108,20 @@ def _cardinality(key: str, query: SpecQuery, files: list) -> str | list | None:
     if card == 'list':
         return sorted(paths, key=_natural_key)
     if card == 'pair':
-        return sorted(paths) if len(paths) == 2 else None
+        if len(paths) > 2:
+            raise ValueError(f'{key!r}: expected at most two matches, got {len(paths)}: {paths}')
+        return sorted(paths, key=_natural_key) if len(paths) == 2 else None
     if card == 'ordered':
-        by_label = {f.entities.get('label'): f.path for f in files}
-        ordered = [by_label[label] for label in (query.labels or []) if label in by_label]
+        by_label: dict[str | None, list[str]] = {}
+        for f in files:
+            by_label.setdefault(f.entities.get('label'), []).append(f.path)
+        for label, group in by_label.items():
+            if len(group) > 1:
+                raise ValueError(
+                    f'{key!r}: expected at most one match for label {label!r}, '
+                    f'got {len(group)}: {group}'
+                )
+        ordered = [by_label[label][0] for label in (query.labels or []) if label in by_label]
         return ordered or None
     raise ValueError(f'Unknown cardinality: {card}')
 
