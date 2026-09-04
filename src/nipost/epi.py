@@ -101,17 +101,9 @@ def get_trt(
     """
     # Use case 1: TRT is defined
     if 'TotalReadoutTime' in in_meta:
-        trt = in_meta.get('TotalReadoutTime')
-        if not trt:
-            raise ValueError(f"'{trt}'")
-
-        return trt
+        return in_meta['TotalReadoutTime']
     elif use_estimate and 'EstimatedTotalReadoutTime' in in_meta:
-        trt = in_meta.get('EstimatedTotalReadoutTime')
-        if not trt:
-            raise ValueError(f"'{trt}'")
-
-        return trt
+        return in_meta['EstimatedTotalReadoutTime']
 
     if in_meta.keys() & {
         'PhaseEncodingDirection',
@@ -139,7 +131,7 @@ def get_trt(
             # Effective echo spacing means that acceleration factors have been accounted for.
             return ees * (npe - 1)
         elif use_estimate and 'EstimatedEffectiveEchoSpacing' in in_meta:
-            return in_meta.get('EstimatedEffectiveEchoSpacing') * (npe - 1)
+            return in_meta['EstimatedEffectiveEchoSpacing'] * (npe - 1)
 
         try:
             echospacing = in_meta['EchoSpacing']
