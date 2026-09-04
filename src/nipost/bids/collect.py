@@ -66,18 +66,15 @@ def _resolve(
     merged = {**_scoped(base, scope), **alt}
     out: dict = {}
     for key, value in merged.items():
-        if isinstance(value, list):
-            resolved = [
-                item
-                for item in (_resolve_value(member, fieldmap_id, space) for member in value)
-                if item is not _DROP
-            ]
-            if resolved:
-                out[key] = resolved
-        else:
-            resolved = _resolve_value(value, fieldmap_id, space)
-            if resolved is not _DROP:
-                out[key] = resolved
+        if not isinstance(value, list):
+            value = [value]
+        resolved = [
+            item
+            for item in (_resolve_value(member, fieldmap_id, space) for member in value)
+            if item is not _DROP
+        ]
+        if resolved:
+            out[key] = resolved
     return out
 
 
