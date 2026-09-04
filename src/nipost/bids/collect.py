@@ -64,6 +64,7 @@ def _scoped(base: dict, scope: list[str] | None) -> dict:
 
 def _lookup(
     layout,
+    key: str,
     query: SpecQuery,
     base: dict,
     fieldmap_id: str | None,
@@ -77,20 +78,25 @@ def _lookup(
     for alt in query.alternatives:
         found = layout.get(**_resolve(alt, base, query.scope, fieldmap_id, space))
         if found:
-            return _cardinality(query, found)
-    return _cardinality(query, [])
+            return _cardinality(key, query, found)
+    return _cardinality(key, query, [])
 
 
-def _cardinality(query: SpecQuery, files: list) -> str | list | None:
-    """Reduce a list of BIDSFile objects to the shape declared by the query."""
+def _cardinality(key: str, query: SpecQuery, files: list) -> str | list | None:
+    """Reduce a list of BIDSFile objects to the shape declared by the query.
+
+    Absence is never an error — precomputed derivatives are whatever exists,
+    and a missing item simply omits its key. Ambiguity is an error: a scalar
+    item matching more than one file means a malformed dataset.
+    """
     paths = [f.path for f in files]
     card = query.cardinality
     if card == 'single':
-        return paths[0] if len(paths) == 1 else (paths or None)
+        if len(paths) > 1:
+            raise ValueError(f'{key!r}: expected at most one match, got {len(paths)}: {paths}')
+        return paths[0] if paths else None
     if card == 'list':
         return paths
-    if card == 'optional':
-        return paths or None
     if card == 'pair':
         return sorted(paths) if len(paths) == 2 else None
     if card == 'ordered':
@@ -122,20 +128,20 @@ def collect_derivatives(
 
     out: dict = {}
     for key, query in spec.items.items():
-        result = _lookup(layout, query, base, fieldmap_id)
+        result = _lookup(layout, key, query, base, fieldmap_id)
         if result is not None:
             out[key] = result
 
     transforms: dict = {}
     # Flat transforms (func: hmc / boldref2anat / boldref2fmap)
     for key, query in spec.transforms.items():
-        result = _lookup(layout, query, base, fieldmap_id)
+        result = _lookup(layout, key, query, base, fieldmap_id)
         if result is not None:
             transforms[key] = result
     # Space-varying transforms (anat: forward / reverse per std space)
     for space in std_spaces or []:
         for key, query in spec.space_transforms.items():
-            result = _lookup(layout, query, base, fieldmap_id, space)
+            result = _lookup(layout, key, query, base, fieldmap_id, space)
             if result is not None:
                 transforms.setdefault(space, {})[key] = result
 
@@ -171,7 +177,7 @@ def collect_fieldmaps(
     for fmapid in fmapids:
         entry: dict = {}
         for key, query in spec.items():
-            result = _lookup(layout, query, {**entities, 'fmapid': fmapid}, None)
+            result = _lookup(layout, key, query, {**entities, 'fmapid': fmapid}, None)
             if result is not None:
                 entry[key] = result
         if entry:

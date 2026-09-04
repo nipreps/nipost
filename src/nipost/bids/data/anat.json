@@ -6,7 +6,7 @@
     },
     "t2w_preproc": {
       "entities": { "datatype": "anat", "suffix": "T2w", "desc": "preproc" },
-      "cardinality": "optional"
+      "cardinality": "single"
     },
     "mask": {
       "entities": { "datatype": "anat", "suffix": "mask", "desc": "brain" },
