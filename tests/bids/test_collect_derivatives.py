@@ -310,3 +310,42 @@ def test_scope_keeps_listed_entities(empty_root):
     out = collect_derivatives(empty_root, spec=spec, subject_id='02', entities={'task': 'rest'})
 
     assert 'other_subject' not in out
+
+
+def test_spec_entities_override_caller_entities(empty_root):
+    """A caller may pass raw source-file entities without stripping them first."""
+    from nipost.bids.collect import collect_derivatives
+    from nipost.bids.spec import Query, Spec
+
+    _write(empty_root / 'sub-01' / 'func' / 'sub-01_task-rest_space-run_boldref.nii.gz')
+
+    spec = Spec(
+        items={
+            'run_boldref': Query(
+                [
+                    {
+                        'datatype': 'func',
+                        'space': 'run',
+                        'suffix': 'boldref',
+                        'extension': ['.nii.gz', '.nii'],
+                    }
+                ],
+                'single',
+            )
+        }
+    )
+    # Entities as they come off a raw BOLD BIDSFile: suffix/extension describe
+    # the *source*, not the derivative being looked up.
+    out = collect_derivatives(
+        empty_root,
+        spec=spec,
+        subject_id='01',
+        entities={
+            'task': 'rest',
+            'datatype': 'func',
+            'suffix': 'bold',
+            'extension': '.nii.gz',
+        },
+    )
+
+    assert out['run_boldref'].endswith('space-run_boldref.nii.gz')
