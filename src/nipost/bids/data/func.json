@@ -1,40 +1,189 @@
 {
   "items": {
     "hmc_boldref": {
-      "entities": { "datatype": "func", "desc": "hmc", "suffix": "boldref" },
+      "alternatives": [
+        {
+          "datatype": "func",
+          "space": "orig",
+          "desc": "hmc",
+          "suffix": "boldref",
+          "extension": [".nii.gz", ".nii"]
+        },
+        {
+          "datatype": "func",
+          "space": null,
+          "desc": "hmc",
+          "suffix": "boldref",
+          "extension": [".nii.gz", ".nii"]
+        }
+      ],
       "cardinality": "single"
     },
-    "coreg_boldref": {
-      "entities": { "datatype": "func", "desc": "coreg", "suffix": "boldref" },
+    "run_boldref": {
+      "alternatives": [
+        {
+          "datatype": "func",
+          "space": "run",
+          "desc": null,
+          "suffix": "boldref",
+          "extension": [".nii.gz", ".nii"]
+        },
+        {
+          "datatype": "func",
+          "space": null,
+          "desc": "coreg",
+          "suffix": "boldref",
+          "extension": [".nii.gz", ".nii"]
+        }
+      ],
+      "cardinality": "single"
+    },
+    "session_boldref": {
+      "alternatives": [
+        {
+          "datatype": "func",
+          "space": "session",
+          "suffix": "boldref",
+          "extension": [".nii.gz", ".nii"]
+        }
+      ],
+      "scope": ["subject", "session"],
+      "cardinality": "single"
+    },
+    "subject_boldref": {
+      "alternatives": [
+        {
+          "datatype": "func",
+          "space": "subject",
+          "suffix": "boldref",
+          "extension": [".nii.gz", ".nii"]
+        }
+      ],
+      "scope": ["subject"],
       "cardinality": "single"
     }
   },
   "transforms": {
     "hmc": {
-      "entities": { "from": "orig", "to": "boldref", "mode": "image", "suffix": "xfm", "extension": ".txt" },
+      "alternatives": [
+        {
+          "datatype": "func",
+          "from": "orig",
+          "to": "run",
+          "mode": "image",
+          "suffix": "xfm",
+          "extension": ".txt"
+        },
+        {
+          "datatype": "func",
+          "from": "orig",
+          "to": "boldref",
+          "mode": "image",
+          "suffix": "xfm",
+          "extension": ".txt"
+        }
+      ],
       "cardinality": "single"
     },
-    "boldref2anat": {
-      "entities": {
-        "from": "boldref",
-        "to": ["anat", "T1w", "T2w"],
-        "mode": "image",
-        "desc": "coreg",
-        "suffix": "xfm",
-        "extension": ".txt"
-      },
+    "run2anat": {
+      "alternatives": [
+        {
+          "datatype": "func",
+          "from": "run",
+          "to": ["anat", "T1w", "T2w"],
+          "mode": "image",
+          "suffix": "xfm",
+          "extension": ".txt"
+        },
+        {
+          "datatype": "func",
+          "from": "boldref",
+          "to": ["anat", "T1w", "T2w"],
+          "mode": "image",
+          "suffix": "xfm",
+          "extension": ".txt"
+        }
+      ],
       "cardinality": "single"
     },
-    "boldref2fmap": {
-      "entities": {
-        "from": "boldref",
-        "to": "{fieldmap_id}",
-        "mode": "image",
-        "desc": "*none*",
-        "suffix": "xfm",
-        "extension": ".txt"
-      },
+    "run2fmap": {
+      "alternatives": [
+        {
+          "datatype": "func",
+          "from": "run",
+          "to": "{fieldmap_id}",
+          "desc": "fmap",
+          "mode": "image",
+          "suffix": "xfm",
+          "extension": ".txt"
+        },
+        {
+          "datatype": "func",
+          "from": "boldref",
+          "to": "{fieldmap_id}",
+          "desc": null,
+          "mode": "image",
+          "suffix": "xfm",
+          "extension": ".txt"
+        }
+      ],
       "cardinality": "list"
+    },
+    "run2session": {
+      "alternatives": [
+        {
+          "datatype": "func",
+          "from": "run",
+          "to": "session",
+          "desc": "coreg",
+          "mode": "image",
+          "suffix": "xfm",
+          "extension": ".txt"
+        }
+      ],
+      "cardinality": "single"
+    },
+    "run2subject": {
+      "alternatives": [
+        {
+          "datatype": "func",
+          "from": "run",
+          "to": "subject",
+          "desc": "coreg",
+          "mode": "image",
+          "suffix": "xfm",
+          "extension": ".txt"
+        }
+      ],
+      "cardinality": "single"
+    },
+    "session2anat": {
+      "alternatives": [
+        {
+          "datatype": "func",
+          "from": "session",
+          "to": ["anat", "T1w", "T2w"],
+          "mode": "image",
+          "suffix": "xfm",
+          "extension": ".txt"
+        }
+      ],
+      "scope": ["subject", "session"],
+      "cardinality": "single"
+    },
+    "subject2anat": {
+      "alternatives": [
+        {
+          "datatype": "func",
+          "from": "subject",
+          "to": ["anat", "T1w", "T2w"],
+          "mode": "image",
+          "suffix": "xfm",
+          "extension": ".txt"
+        }
+      ],
+      "scope": ["subject"],
+      "cardinality": "single"
     }
   }
 }
