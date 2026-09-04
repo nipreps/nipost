@@ -5,6 +5,7 @@
         "datatype": "anat",
         "suffix": "T1w",
         "desc": "preproc",
+        "space": null,
         "extension": [".nii.gz", ".nii"]
       },
       "cardinality": "single"
@@ -14,6 +15,7 @@
         "datatype": "anat",
         "suffix": "T2w",
         "desc": "preproc",
+        "space": null,
         "extension": [".nii.gz", ".nii"]
       },
       "cardinality": "single"
@@ -23,6 +25,7 @@
         "datatype": "anat",
         "suffix": "mask",
         "desc": "brain",
+        "space": null,
         "extension": [".nii.gz", ".nii"]
       },
       "cardinality": "single"
@@ -32,6 +35,7 @@
         "datatype": "anat",
         "suffix": "dseg",
         "desc": null,
+        "space": null,
         "extension": [".nii.gz", ".nii"]
       },
       "cardinality": "single"
@@ -40,6 +44,7 @@
       "entities": {
         "datatype": "anat",
         "suffix": "probseg",
+        "space": null,
         "extension": [".nii.gz", ".nii"]
       },
       "cardinality": "ordered",
