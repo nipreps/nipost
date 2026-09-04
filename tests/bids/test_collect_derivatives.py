@@ -162,8 +162,8 @@ def test_boldref2fmap_list_zero_matches(func_root):
 
     # Spec with only boldref2fmap (list cardinality).
     # The func_root has a desc-coreg boldref->T1w file but NO no-desc fmap transform
-    # when desc='*none*' is applied and fieldmap_id is a specific value that does not
-    # exist in the tree → zero matches expected.
+    # when desc=None (must be absent) is applied and fieldmap_id is a specific value
+    # that does not exist in the tree → zero matches expected.
     spec = Spec(
         transforms={
             'boldref2fmap': Query(
