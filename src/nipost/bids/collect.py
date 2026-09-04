@@ -40,6 +40,32 @@ def _clean(entities: dict, fieldmap_id: str | None) -> dict:
     return out
 
 
+def _scoped(base: dict, scope: list[str] | None) -> dict:
+    """Restrict caller-supplied entities to the ones this query accepts."""
+    if scope is None:
+        return base
+    return {key: value for key, value in base.items() if key in scope}
+
+
+def _lookup(
+    layout,
+    query: SpecQuery,
+    base: dict,
+    fieldmap_id: str | None,
+) -> str | list | None:
+    """Return the reduced result for the first alternative that matches anything.
+
+    If no alternative matches, the cardinality's zero-match outcome is returned
+    (``[]`` for ``'list'``, ``None`` otherwise).
+    """
+    scoped = _scoped(base, query.scope)
+    for alt in query.alternatives:
+        found = layout.get(**_clean({**alt, **scoped}, fieldmap_id))
+        if found:
+            return _cardinality(query, found)
+    return _cardinality(query, [])
+
+
 def _cardinality(query: SpecQuery, files: list) -> str | list | None:
     """Reduce a list of BIDSFile objects to the shape declared by the query."""
     paths = [f.path for f in files]
@@ -81,25 +107,30 @@ def collect_derivatives(
 
     out: dict = {}
     for key, query in spec.items.items():
-        qry = _clean({**query.entities, **base}, fieldmap_id)
-        result = _cardinality(query, layout.get(**qry))
+        result = _lookup(layout, query, base, fieldmap_id)
         if result is not None:
             out[key] = result
 
     transforms: dict = {}
     # Flat transforms (func: hmc / boldref2anat / boldref2fmap)
     for key, query in spec.transforms.items():
-        qry = _clean({**query.entities, **base}, fieldmap_id)
-        result = _cardinality(query, layout.get(**qry))
+        result = _lookup(layout, query, base, fieldmap_id)
         if result is not None:
             transforms[key] = result
     # Space-varying transforms (anat: forward / reverse per std space)
     for space in std_spaces or []:
         space_entity = substitute_space(space)
         for key, query in spec.space_transforms.items():
-            raw = {k: (space_entity if v is None else v) for k, v in query.entities.items()}
-            qry = _clean({**raw, **base}, fieldmap_id)
-            result = _cardinality(query, layout.get(**qry))
+            substituted = SpecQuery(
+                alternatives=[
+                    {k: (space_entity if v is None else v) for k, v in alt.items()}
+                    for alt in query.alternatives
+                ],
+                cardinality=query.cardinality,
+                labels=query.labels,
+                scope=query.scope,
+            )
+            result = _lookup(layout, substituted, base, fieldmap_id)
             if result is not None:
                 transforms.setdefault(space, {})[key] = result
 
@@ -135,8 +166,7 @@ def collect_fieldmaps(
     for fmapid in fmapids:
         entry: dict = {}
         for key, query in spec.items():
-            qry = _clean({**query.entities, **entities, 'fmapid': fmapid}, None)
-            result = _cardinality(query, layout.get(**qry))
+            result = _lookup(layout, query, {**entities, 'fmapid': fmapid}, None)
             if result is not None:
                 entry[key] = result
         if entry:

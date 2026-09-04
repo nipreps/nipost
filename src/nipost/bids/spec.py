@@ -13,14 +13,38 @@ from dataclasses import dataclass, field
 from importlib.resources import files
 from pathlib import Path
 
-Cardinality = str  # one of: 'single', 'optional', 'list', 'pair', 'ordered'
+Cardinality = str  # one of: 'single', 'list', 'pair', 'ordered'
 
 
 @dataclass
 class Query:
-    entities: dict
+    """A single named lookup in a spec.
+
+    Parameters
+    ----------
+    alternatives
+        Ordered entity dicts describing the same logical item under different
+        naming schemes. The interpreter selects the **first** alternative that
+        matches anything; cardinality is applied to that alternative's matches
+        alone, never to a union across alternatives. Put current naming first
+        and legacy naming after it.
+    cardinality
+        The shape to reduce matches to. See :func:`nipost.bids.collect._cardinality`.
+    labels
+        For ``cardinality='ordered'``, the ``label`` entity values in the
+        required output order.
+    scope
+        Allowlist of caller-supplied entity names this query accepts;
+        everything else the caller passed is dropped for this query. ``None``
+        accepts all of them. Group-level derivatives — written once per session
+        or subject, with run-level entities dismissed — use this to become
+        reachable from a run-level call.
+    """
+
+    alternatives: list[dict]
     cardinality: Cardinality = 'single'
     labels: list[str] | None = None
+    scope: list[str] | None = None
 
 
 @dataclass
@@ -42,10 +66,20 @@ def sanitize_fieldmap_id(fieldmap_id: str) -> str:
 
 
 def _query_from_dict(raw: dict) -> Query:
+    """Build a :class:`Query` from its JSON form.
+
+    Accepts either ``{"entities": {...}}`` (sugar for a single alternative) or
+    ``{"alternatives": [{...}, ...]}``, but not both and not neither.
+    """
+    entities = raw.get('entities')
+    alternatives = raw.get('alternatives')
+    if (entities is None) == (alternatives is None):
+        raise ValueError("A query needs exactly one of 'entities' or 'alternatives'")
     return Query(
-        entities=raw['entities'],
+        alternatives=[entities] if entities is not None else alternatives,  # type: ignore[arg-type]
         cardinality=raw.get('cardinality', 'single'),
         labels=raw.get('labels'),
+        scope=raw.get('scope'),
     )
 
 
