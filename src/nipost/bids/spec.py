@@ -3,6 +3,10 @@
 
 Not a port: designed to be expressive enough to cover the query cases in the
 fMRIPrep, sMRIPrep, and nibabies io_spec files, without matching them verbatim.
+
+Both structs forbid unknown fields, so a misspelled key -- ``scop`` for
+``scope``, ``item`` for ``items`` -- fails to decode instead of silently
+leaving the real field at its default.
 """
 
 from __future__ import annotations
@@ -22,7 +26,7 @@ class Cardinality(enum.StrEnum):
     ORDERED = 'ordered'
 
 
-class Query(Struct):
+class Query(Struct, forbid_unknown_fields=True):
     """A single named lookup in a spec.
 
     Parameters
@@ -58,7 +62,7 @@ class Query(Struct):
             raise ValueError("Query with cardinality='ordered' must have non-empty labels")
 
 
-class Spec(Struct):
+class Spec(Struct, forbid_unknown_fields=True):
     items: dict[str, Query] = field(default_factory=dict)
     transforms: dict[str, Query] = field(default_factory=dict)  # flat -> out['transforms'][key]
     space_transforms: dict[str, Query] = field(
