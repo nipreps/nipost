@@ -3,16 +3,11 @@
 
 from __future__ import annotations
 
-import json
 import re
-from importlib.resources import files as _pkg_files
 from pathlib import Path
 
-from bids.layout import Query
-
 from nipost.bids._layout import get_layout
-from nipost.bids.spec import Query as SpecQuery
-from nipost.bids.spec import Spec, _query_from_dict, sanitize_fieldmap_id, substitute_space
+from nipost.bids.spec import Query, Spec, load_spec, sanitize_fieldmap_id, substitute_space
 
 _PLACEHOLDER_RE = re.compile(r'^\{.+\}$')
 _DROP = object()  # sentinel: this value contributes no constraint
@@ -39,7 +34,7 @@ def _resolve_value(value, fieldmap_id: str | None, space: str | None):
       rejected, rather than silently passed through to PyBIDS unresolved.
     """
     if value is None:
-        return Query.NONE
+        return None
     if value == '{fieldmap_id}':
         return _DROP if fieldmap_id is None else sanitize_fieldmap_id(fieldmap_id)
     if value == '{space}':
@@ -89,7 +84,7 @@ def _resolve(
 def _lookup(
     layout,
     key: str,
-    query: SpecQuery,
+    query: Query,
     base: dict,
     fieldmap_id: str | None,
     space: str | None = None,
@@ -99,7 +94,7 @@ def _lookup(
     If no alternative matches, the cardinality's zero-match outcome is returned
     (``[]`` for ``'list'``, ``None`` otherwise).
     """
-    for alt in query.alternatives:
+    for alt in query.entities:
         found = layout.get(**_resolve(alt, base, query.scope, fieldmap_id, space))
         if found:
             return _cardinality(key, query, found)
@@ -116,7 +111,7 @@ def _natural_key(path: str) -> list[int | str]:
     return [int(part) if part.isdigit() else part for part in re.split(r'(\d+)', path)]
 
 
-def _cardinality(key: str, query: SpecQuery, files: list) -> str | list | None:
+def _cardinality(key: str, query: Query, files: list) -> str | list | None:
     """Reduce a list of BIDSFile objects to the shape declared by the query.
 
     Absence is never an error — precomputed derivatives are whatever exists,
@@ -200,7 +195,7 @@ def collect_derivatives(
 def collect_fieldmaps(
     derivatives_dir: Path,
     entities: dict,
-    spec: dict[str, SpecQuery] | None = None,
+    spec: Spec | None = None,
 ) -> dict:
     """Collect fieldmap derivatives grouped by fieldmap id.
 
@@ -210,8 +205,7 @@ def collect_fieldmaps(
     :func:`nipost.reconstruct_fieldmap` expects).
     """
     if spec is None:
-        raw = json.loads((_pkg_files('nipost.bids.data') / 'fmap.json').read_text())
-        spec = {k: _query_from_dict(v) for k, v in raw.items()}
+        spec = load_spec('fmap')
 
     layout = get_layout(Path(derivatives_dir))
 
@@ -225,7 +219,7 @@ def collect_fieldmaps(
     out: dict = {}
     for fmapid in fmapids:
         entry: dict = {}
-        for key, query in spec.items():
+        for key, query in spec.items.items():
             result = _lookup(layout, key, query, {**entities, 'fmapid': fmapid}, None)
             if result is not None:
                 entry[key] = result

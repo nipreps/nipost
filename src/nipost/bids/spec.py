@@ -7,17 +7,19 @@ fMRIPrep, sMRIPrep, and nibabies io_spec files, without matching them verbatim.
 
 from __future__ import annotations
 
+import enum
 import re
 from importlib.resources import files
 from pathlib import Path
 
 from msgspec import Struct, field, yaml
 
-TYPE_CHECKING = False
-if TYPE_CHECKING:
-    from typing import Literal
 
-    Cardinality = Literal['single', 'list', 'pair', 'ordered']
+class Cardinality(enum.StrEnum):
+    SINGLE = 'single'
+    LIST = 'list'
+    PAIR = 'pair'
+    ORDERED = 'ordered'
 
 
 class Query(Struct):
@@ -76,7 +78,7 @@ def sanitize_fieldmap_id(fieldmap_id: str) -> str:
 def load_spec(name_or_path: str | Path) -> Spec:
     """Load a bundled spec by name (``anat``/``func``) or from a JSON path."""
     text: str
-    if isinstance(name_or_path, str) and name_or_path in ('anat', 'func'):
+    if isinstance(name_or_path, str) and name_or_path in ('anat', 'func', 'fmap'):
         text = (files('nipost.bids.data') / f'{name_or_path}.yml').read_text()
     else:
         text = Path(name_or_path).read_text()
