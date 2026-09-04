@@ -469,3 +469,27 @@ def test_optional_cardinality_is_rejected(deriv_root):
 
     with pytest.raises(ValueError, match='Unknown cardinality'):
         collect_derivatives(deriv_root, spec=spec, subject_id='01')
+
+
+def test_image_queries_ignore_json_sidecars(empty_root):
+    """PyBIDS indexes a derivative's sidecar as its own file with the same entities."""
+    from nipost.bids.collect import collect_derivatives
+    from nipost.bids.spec import load_spec
+
+    anat = empty_root / 'sub-01' / 'anat'
+    for name in (
+        'sub-01_desc-preproc_T1w.nii.gz',
+        'sub-01_desc-brain_mask.nii.gz',
+    ):
+        _write(anat / name)
+    for name in (
+        'sub-01_desc-preproc_T1w.json',
+        'sub-01_desc-brain_mask.json',
+    ):
+        anat.mkdir(parents=True, exist_ok=True)
+        (anat / name).write_text('{}')
+
+    out = collect_derivatives(empty_root, spec=load_spec('anat'), subject_id='01')
+
+    assert out['t1w_preproc'].endswith('desc-preproc_T1w.nii.gz')
+    assert out['mask'].endswith('desc-brain_mask.nii.gz')
