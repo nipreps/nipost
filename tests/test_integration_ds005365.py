@@ -103,22 +103,22 @@ def test_demo_reproduces_checksum() -> None:
     # Select the boldref->anat leg. ds005365 was preprocessed per-run, so
     # run2anat is present; a session- or subject-level dataset instead
     # supplies a run2<level> / <level>2anat pair.
-    if 'run2anat' in transforms:
-        boldref2anat = [transforms['run2anat']]
-    else:
-        level = next(
-            lvl
-            for lvl in ('session', 'subject')
-            if f'run2{lvl}' in transforms and f'{lvl}2anat' in transforms
-        )
-        boldref2anat = [transforms[f'run2{level}'], transforms[f'{level}2anat']]
+    run2anat_xfms = next(
+        [transforms[k] for k in keyset]
+        for keyset in [
+            ['run2anat'],
+            ['run2session', 'session2anat'],
+            ['run2subject', 'subject2anat'],
+        ]
+        if all(k in transforms for k in keyset)
+    )
 
-    bold2std_xfms = [transforms['hmc'], *boldref2anat, anat2std_xfm]
+    bold2std_xfms = [transforms['hmc'], *run2anat_xfms, anat2std_xfm]
 
     # run2fmap is a list; [0] is the fieldmap transform
     run2fmap_xfm = transforms['run2fmap'][0]
-    fmap2std_xfms = [run2fmap_xfm, *boldref2anat, anat2std_xfm]
-    fmap2std_inv = [True, *[False] * (len(boldref2anat) + 1)]
+    fmap2std_xfms = [run2fmap_xfm, *run2anat_xfms, anat2std_xfm]
+    fmap2std_inv = [True, *[False] * (len(run2anat_xfms) + 1)]
 
     # The notebook used: deriv.files[run2fmap_xfm].entities['to']
     # We replicate this via BIDSLayout with the nipreps config.
