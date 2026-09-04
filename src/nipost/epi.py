@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+import os
+
 import nibabel as nb
 
 TYPE_CHECKING = False
 if TYPE_CHECKING:
     from typing import Any
+
+
+def load_api[ImgT: nb.filebasedimages.FileBasedImage](
+    path: str | os.PathLike[str], api: type[ImgT]
+) -> ImgT:
+    img = nb.load(path)
+    if not isinstance(img, api):
+        raise TypeError(f'File {path} does not implement {api} interface')
+    return img
 
 
 # --- ensure_positive_cosines (sdcflows/utils/tools.py:133-150) ---
@@ -91,17 +102,9 @@ def get_trt(
     """
     # Use case 1: TRT is defined
     if 'TotalReadoutTime' in in_meta:
-        trt = in_meta.get('TotalReadoutTime')
-        if not trt:
-            raise ValueError(f"'{trt}'")
-
-        return trt
+        return in_meta['TotalReadoutTime']
     elif use_estimate and 'EstimatedTotalReadoutTime' in in_meta:
-        trt = in_meta.get('EstimatedTotalReadoutTime')
-        if not trt:
-            raise ValueError(f"'{trt}'")
-
-        return trt
+        return in_meta['EstimatedTotalReadoutTime']
 
     if in_meta.keys() & {
         'PhaseEncodingDirection',
@@ -116,8 +119,10 @@ def get_trt(
             raise ValueError(
                 'File must be provided to determine the number of voxels along the phase-encoding direction.'
             )
-        img: nb.spatialimages.SpatialImage = (
-            nb.load(in_file) if isinstance(in_file, str) else in_file
+        img = (
+            load_api(in_file, nb.spatialimages.SpatialImage)
+            if isinstance(in_file, str)
+            else in_file
         )
         npe = img.shape[pe_index]
 
@@ -127,7 +132,7 @@ def get_trt(
             # Effective echo spacing means that acceleration factors have been accounted for.
             return ees * (npe - 1)
         elif use_estimate and 'EstimatedEffectiveEchoSpacing' in in_meta:
-            return in_meta.get('EstimatedEffectiveEchoSpacing') * (npe - 1)
+            return in_meta['EstimatedEffectiveEchoSpacing'] * (npe - 1)
 
         try:
             echospacing = in_meta['EchoSpacing']
