@@ -532,6 +532,75 @@ def test_anat_spec_prefers_native_over_std_space_dupes(anat_with_std_space_dupes
     assert [p.rsplit('label-', 1)[1][:2] for p in out['tpms']] == ['GM', 'WM', 'CS']
 
 
+class _StubFile:
+    """A minimal stand-in for a PyBIDS BIDSFile, for testing `_cardinality` directly.
+
+    `_cardinality` is a pure reducer over `(path, entities)` pairs, so its
+    ambiguity/absence rules are pinned here rather than end to end.
+    """
+
+    def __init__(self, path, label=None):
+        self.path = path
+        self.entities = {'label': label} if label is not None else {}
+
+
+def test_ordered_cardinality_raises_on_ambiguity():
+    """Two files sharing a label is a malformed dataset, not a last-wins pick."""
+    from nipost.bids.collect import _cardinality
+    from nipost.bids.spec import Query
+
+    files = [
+        _StubFile('/x/sub-01_run-1_label-GM_probseg.nii.gz', 'GM'),
+        _StubFile('/x/sub-01_run-2_label-GM_probseg.nii.gz', 'GM'),
+        _StubFile('/x/sub-01_label-WM_probseg.nii.gz', 'WM'),
+    ]
+
+    with pytest.raises(ValueError, match='tpms'):
+        _cardinality('tpms', Query([{}], 'ordered', labels=['GM', 'WM', 'CSF']), files)
+
+
+def test_ordered_cardinality_drops_missing_labels_in_order():
+    """Absence is never an error: a missing label is simply skipped."""
+    from nipost.bids.collect import _cardinality
+    from nipost.bids.spec import Query
+
+    files = [
+        _StubFile('/x/sub-01_label-CSF_probseg.nii.gz', 'CSF'),
+        _StubFile('/x/sub-01_label-WM_probseg.nii.gz', 'WM'),
+    ]
+
+    result = _cardinality('tpms', Query([{}], 'ordered', labels=['GM', 'WM', 'CSF']), files)
+
+    assert result == [
+        '/x/sub-01_label-WM_probseg.nii.gz',
+        '/x/sub-01_label-CSF_probseg.nii.gz',
+    ]
+
+
+def test_pair_cardinality_raises_on_three_or_more_matches():
+    """Ambiguity is an error for 'pair' too, not just 'single'."""
+    from nipost.bids.collect import _cardinality
+    from nipost.bids.spec import Query
+
+    files = [
+        _StubFile(p)
+        for p in ('/x/hemi-L_white.surf.gii', '/x/hemi-R_white.surf.gii', '/x/extra.surf.gii')
+    ]
+
+    with pytest.raises(ValueError, match='white'):
+        _cardinality('white', Query([{}], 'pair'), files)
+
+
+def test_pair_cardinality_returns_none_for_single_match():
+    """Too few matches is absence, not ambiguity: 'pair' returns None."""
+    from nipost.bids.collect import _cardinality
+    from nipost.bids.spec import Query
+
+    result = _cardinality('white', Query([{}], 'pair'), [_StubFile('/x/hemi-L_white.surf.gii')])
+
+    assert result is None
+
+
 def test_image_queries_ignore_json_sidecars(empty_root):
     """PyBIDS indexes a derivative's sidecar as its own file with the same entities."""
     from nipost.bids.collect import collect_derivatives
