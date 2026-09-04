@@ -1,0 +1,131 @@
+items:
+  hmc_boldref:
+    entities:
+      - datatype: func
+        space: orig
+        desc: hmc
+        suffix: boldref
+        extension: [.nii.gz, .nii]
+      - datatype: func
+        space: null
+        desc: hmc
+        suffix: boldref
+        extension: [.nii.gz, .nii]
+    cardinality: single
+  run_boldref:
+    entities:
+      - datatype: func
+        space: run
+        desc: null
+        suffix: boldref
+        extension: [.nii.gz, .nii]
+      - datatype: func
+        space: null
+        desc: coreg
+        suffix: boldref
+        extension: [.nii.gz, .nii]
+    cardinality: single
+  session_boldref:
+    entities:
+      - datatype: func
+        space: session
+        suffix: boldref
+        extension: [.nii.gz, .nii]
+    scope: [subject, session]
+    cardinality: single
+  subject_boldref:
+    entities:
+      - datatype: func
+        space: subject
+        suffix: boldref
+        extension: [.nii.gz, .nii]
+    scope: [subject]
+    cardinality: single
+transforms:
+  hmc:
+    entities:
+      - datatype: func
+        from: orig
+        to: run
+        mode: image
+        suffix: xfm
+        extension: .txt
+      - datatype: func
+        from: orig
+        to: boldref
+        mode: image
+        suffix: xfm
+        extension: .txt
+    cardinality: single
+  run2anat:
+    entities:
+      - datatype: func
+        from: run
+        to: [anat, T1w, T2w]
+        mode: image
+        suffix: xfm
+        extension: .txt
+      - datatype: func
+        from: boldref
+        to: [anat, T1w, T2w]
+        mode: image
+        suffix: xfm
+        extension: .txt
+    cardinality: single
+  run2fmap:
+    entities:
+      - datatype: func
+        from: run
+        to: '{fieldmap_id}'
+        desc: fmap
+        mode: image
+        suffix: xfm
+        extension: .txt
+      - datatype: func
+        from: boldref
+        to: '{fieldmap_id}'
+        desc: null
+        mode: image
+        suffix: xfm
+        extension: .txt
+    cardinality: list
+  run2session:
+    entities:
+      - datatype: func
+        from: run
+        to: session
+        desc: coreg
+        mode: image
+        suffix: xfm
+        extension: .txt
+    cardinality: single
+  run2subject:
+    entities:
+      - datatype: func
+        from: run
+        to: subject
+        desc: coreg
+        mode: image
+        suffix: xfm
+        extension: .txt
+    cardinality: single
+  session2anat:
+    entities:
+      - datatype: func
+        from: session
+        to: [anat, T1w, T2w]
+        mode: image
+        suffix: xfm
+        extension: .txt
+    scope: [subject, session]
+    cardinality: single
+  subject2anat:
+    entities:
+      - datatype: func
+        from: subject
+        to: [anat, T1w, T2w]
+        mode: image
+        suffix: xfm
+        extension: .txt
+    scope: [subject]
+    cardinality: single

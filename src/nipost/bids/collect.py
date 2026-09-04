@@ -3,58 +3,145 @@
 
 from __future__ import annotations
 
-import json
-from importlib.resources import files as _pkg_files
+import re
 from pathlib import Path
 
-from bids.layout import Query
-
 from nipost.bids._layout import get_layout
-from nipost.bids.spec import Query as SpecQuery
-from nipost.bids.spec import Spec, _query_from_dict, sanitize_fieldmap_id, substitute_space
+from nipost.bids.spec import Query, Spec, load_spec, sanitize_fieldmap_id, substitute_space
+
+_PLACEHOLDER_RE = re.compile(r'^\{.+\}$')
+_DROP = object()  # sentinel: this value contributes no constraint
 
 
-def _clean(entities: dict, fieldmap_id: str | None) -> dict:
-    """Resolve dynamic values and drop unconstrained (None) entities.
+def _scoped(base: dict, scope: list[str] | None) -> dict:
+    """Restrict caller-supplied entities to the ones this query accepts."""
+    if scope is None:
+        return base
+    return {key: value for key, value in base.items() if key in scope}
 
-    - ``None`` value: dropped ("no constraint"; also the std-space placeholder
-      after substitution).
-    - ``'*none*'`` value: mapped to PyBIDS ``Query.NONE`` (entity must be
-      ABSENT) — used to exclude e.g. the ``desc-coreg`` transform from the
-      ``boldref2fmap`` query so it is not confused with ``boldref2anat``.
-    - ``'{fieldmap_id}'`` value: sanitized/substituted; if ``fieldmap_id`` is
-      None the constraint is dropped so the query matches any value.
+
+def _resolve_value(value, fieldmap_id: str | None, space: str | None):
+    """Resolve one entity value — a scalar, or a single member of a value list.
+
+    - ``None`` becomes PyBIDS ``Query.NONE``: the entity must be ABSENT.
+    - ``'{fieldmap_id}'`` is sanitized and substituted; when no ``fieldmap_id``
+      was given, ``_DROP`` is returned so the caller can drop the constraint
+      (or just this member, for a list) rather than matching the literal string.
+    - ``'{space}'`` is substituted with the standard space being iterated
+      (after cohort conversion). It is only meaningful for
+      ``space_transforms`` queries.
+    - Any other ``{...}``-shaped string is an unrecognized placeholder and is
+      rejected, rather than silently passed through to PyBIDS unresolved.
     """
+    if value is None:
+        return None
+    if value == '{fieldmap_id}':
+        return _DROP if fieldmap_id is None else sanitize_fieldmap_id(fieldmap_id)
+    if value == '{space}':
+        if space is None:
+            raise ValueError("The '{space}' placeholder is only valid in space_transforms queries")
+        return substitute_space(space)
+    if isinstance(value, str) and _PLACEHOLDER_RE.match(value):
+        raise ValueError(f'Unrecognized placeholder {value!r}')
+    return value
+
+
+def _resolve(
+    alt: dict,
+    base: dict,
+    scope: list[str] | None,
+    fieldmap_id: str | None,
+    space: str | None = None,
+) -> dict:
+    """Build a PyBIDS filter dict from one alternative.
+
+    Spec-declared entities override caller-supplied ones. Each value — scalar
+    or a member of a value list — is resolved by :func:`_resolve_value`, so
+    the two positions cannot drift apart. A scalar that resolves to nothing
+    (an unmatched ``'{fieldmap_id}'``) drops the whole constraint; a list
+    member that resolves to nothing is dropped from the list, and if that
+    empties the list, the whole constraint is dropped too rather than passing
+    ``[]`` to PyBIDS (which would match nothing).
+    """
+    merged = {**_scoped(base, scope), **alt}
     out: dict = {}
-    for key, value in entities.items():
-        if value is None:
-            continue
-        if value == '*none*':
-            out[key] = Query.NONE
-            continue
-        if value == '{fieldmap_id}':
-            if fieldmap_id is not None:
-                out[key] = sanitize_fieldmap_id(fieldmap_id)
-            continue
-        out[key] = value
+    for key, value in merged.items():
+        if not isinstance(value, list):
+            value = [value]
+        resolved = [
+            item
+            for item in (_resolve_value(member, fieldmap_id, space) for member in value)
+            if item is not _DROP
+        ]
+        if resolved:
+            out[key] = resolved
     return out
 
 
-def _cardinality(query: SpecQuery, files: list) -> str | list | None:
-    """Reduce a list of BIDSFile objects to the shape declared by the query."""
+def _lookup(
+    layout,
+    key: str,
+    query: Query,
+    base: dict,
+    fieldmap_id: str | None,
+    space: str | None = None,
+) -> str | list | None:
+    """Return the reduced result for the first alternative that matches anything.
+
+    If no alternative matches, the cardinality's zero-match outcome is returned
+    (``[]`` for ``'list'``, ``None`` otherwise).
+    """
+    for alt in query.entities:
+        found = layout.get(**_resolve(alt, base, query.scope, fieldmap_id, space))
+        if found:
+            return _cardinality(key, query, found)
+    return _cardinality(key, query, [])
+
+
+def _natural_key(path: str) -> list[int | str]:
+    """Sort key ordering embedded integers numerically, so coeff2 precedes coeff10.
+
+    ``re.split`` with a capture group always yields non-digit segments at
+    even indices and digit runs at odd ones, so within a single key an
+    ``int`` is never compared against a ``str`` at the same position.
+    """
+    return [int(part) if part.isdigit() else part for part in re.split(r'(\d+)', path)]
+
+
+def _cardinality(key: str, query: Query, files: list) -> str | list | None:
+    """Reduce a list of BIDSFile objects to the shape declared by the query.
+
+    Absence is never an error — precomputed derivatives are whatever exists,
+    and a missing item simply omits its key. Ambiguity is always an error: a
+    scalar item matching more than one file means a malformed dataset, and
+    the same holds for ``'pair'`` (3+ matches) and ``'ordered'`` (2+ matches
+    sharing a label). ``'list'`` and ``'pair'`` results are returned in
+    natural-sorted path order, because callers such as
+    :func:`nipost.reconstruct_fieldmap` depend on position.
+    """
     paths = [f.path for f in files]
     card = query.cardinality
     if card == 'single':
-        return paths[0] if len(paths) == 1 else (paths or None)
+        if len(paths) > 1:
+            raise ValueError(f'{key!r}: expected at most one match, got {len(paths)}: {paths}')
+        return paths[0] if paths else None
     if card == 'list':
-        return paths
-    if card == 'optional':
-        return paths or None
+        return sorted(paths, key=_natural_key)
     if card == 'pair':
-        return sorted(paths) if len(paths) == 2 else None
+        if len(paths) > 2:
+            raise ValueError(f'{key!r}: expected at most two matches, got {len(paths)}: {paths}')
+        return sorted(paths, key=_natural_key) if len(paths) == 2 else None
     if card == 'ordered':
-        by_label = {f.entities.get('label'): f.path for f in files}
-        ordered = [by_label[label] for label in (query.labels or []) if label in by_label]
+        by_label: dict[str | None, list[str]] = {}
+        for f in files:
+            by_label.setdefault(f.entities.get('label'), []).append(f.path)
+        for label, group in by_label.items():
+            if len(group) > 1:
+                raise ValueError(
+                    f'{key!r}: expected at most one match for label {label!r}, '
+                    f'got {len(group)}: {group}'
+                )
+        ordered = [by_label[label][0] for label in (query.labels or []) if label in by_label]
         return ordered or None
     raise ValueError(f'Unknown cardinality: {card}')
 
@@ -81,25 +168,20 @@ def collect_derivatives(
 
     out: dict = {}
     for key, query in spec.items.items():
-        qry = _clean({**query.entities, **base}, fieldmap_id)
-        result = _cardinality(query, layout.get(**qry))
+        result = _lookup(layout, key, query, base, fieldmap_id)
         if result is not None:
             out[key] = result
 
     transforms: dict = {}
-    # Flat transforms (func: hmc / boldref2anat / boldref2fmap)
+    # Flat transforms (func: hmc / run2anat / run2fmap / run2session / ...)
     for key, query in spec.transforms.items():
-        qry = _clean({**query.entities, **base}, fieldmap_id)
-        result = _cardinality(query, layout.get(**qry))
+        result = _lookup(layout, key, query, base, fieldmap_id)
         if result is not None:
             transforms[key] = result
     # Space-varying transforms (anat: forward / reverse per std space)
     for space in std_spaces or []:
-        space_entity = substitute_space(space)
         for key, query in spec.space_transforms.items():
-            raw = {k: (space_entity if v is None else v) for k, v in query.entities.items()}
-            qry = _clean({**raw, **base}, fieldmap_id)
-            result = _cardinality(query, layout.get(**qry))
+            result = _lookup(layout, key, query, base, fieldmap_id, space)
             if result is not None:
                 transforms.setdefault(space, {})[key] = result
 
@@ -110,17 +192,17 @@ def collect_derivatives(
 def collect_fieldmaps(
     derivatives_dir: Path,
     entities: dict,
-    spec: dict[str, SpecQuery] | None = None,
+    spec: Spec | None = None,
 ) -> dict:
     """Collect fieldmap derivatives grouped by fieldmap id.
 
     Returns a dict keyed by fmapid (e.g. ``auto00000``), each value being a
-    dict with keys ``fieldmap``, ``coeffs``, and ``magnitude`` (scalars when
-    cardinality is ``single``).
+    dict with keys ``fieldmap``, ``magnitude`` (scalar paths) and ``coeffs``
+    (a list with one entry per B-spline level, which is what
+    :func:`nipost.reconstruct_fieldmap` expects).
     """
     if spec is None:
-        raw = json.loads((_pkg_files('nipost.bids.data') / 'fmap.json').read_text())
-        spec = {k: _query_from_dict(v) for k, v in raw.items()}
+        spec = load_spec('fmap')
 
     layout = get_layout(Path(derivatives_dir))
 
@@ -134,9 +216,8 @@ def collect_fieldmaps(
     out: dict = {}
     for fmapid in fmapids:
         entry: dict = {}
-        for key, query in spec.items():
-            qry = _clean({**query.entities, **entities, 'fmapid': fmapid}, None)
-            result = _cardinality(query, layout.get(**qry))
+        for key, query in spec.items.items():
+            result = _lookup(layout, key, query, {**entities, 'fmapid': fmapid}, None)
             if result is not None:
                 entry[key] = result
         if entry:
