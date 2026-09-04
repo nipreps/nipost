@@ -62,20 +62,27 @@ jobs:
         # Cover oldest and newest supported on all arches
         python-version: ['3.12', '3.14', '3.14t']
         dependencies: ['latest']
+        test: ['unit']
         include:
-          # Minimum dependencies on oldest Python
-          - {python-version: '3.12', dependencies: min, os: ubuntu-latest}
           # Latest dependencies on intermediate Python(s)
-          - {python-version: '3.13', dependencies: latest, os: ubuntu-latest}
+          - {python-version: '3.13', test: unit, dependencies: latest, os: ubuntu-latest}
+          # Integration tests, with minimum dependencies and latest
+          - {python-version: '3.12', test: integration, dependencies: min, os: ubuntu-latest}
+          - {python-version: '3.14', test: integration, dependencies: latest, os: ubuntu-latest}
 
     env:
       DEPENDS: ${{ matrix.dependencies }}
+      TEST: ${{ matrix.test }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
           fetch-depth: 0
+      - name: Set git user
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "none@example.com"
       - name: Setup uv and Python ${{ matrix.python-version }}
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
