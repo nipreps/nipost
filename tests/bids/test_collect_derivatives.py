@@ -138,9 +138,7 @@ def test_list_valued_entities(deriv_root):
     from nipost.bids.collect import collect_derivatives
     from nipost.bids.spec import Query, Spec
 
-    spec = Spec(
-        items={'preproc': Query([{'suffix': ['T1w', 'T2w'], 'desc': 'preproc'}], 'optional')}
-    )
+    spec = Spec(items={'preproc': Query([{'suffix': ['T1w', 'T2w'], 'desc': 'preproc'}], 'list')})
     out = collect_derivatives(deriv_root, spec=spec, subject_id='01')
     assert len(out['preproc']) == 2  # matches both T1w and T2w
 
@@ -435,3 +433,39 @@ def test_space_placeholder_outside_space_transforms_raises(empty_root):
 
     with pytest.raises(ValueError, match='space_transforms'):
         collect_derivatives(empty_root, spec=spec, subject_id='01')
+
+
+def test_single_cardinality_raises_on_ambiguity(deriv_root):
+    """Two matches for a scalar item is a malformed dataset, not a list result."""
+    from nipost.bids.collect import collect_derivatives
+    from nipost.bids.spec import Query, Spec
+
+    # deriv_root has both desc-preproc_T1w and desc-preproc_T2w
+    spec = Spec(
+        items={
+            'preproc': Query([{'suffix': ['T1w', 'T2w'], 'desc': 'preproc'}], 'single'),
+        }
+    )
+
+    with pytest.raises(ValueError, match='preproc'):
+        collect_derivatives(deriv_root, spec=spec, subject_id='01')
+
+
+def test_single_cardinality_returns_scalar(deriv_root):
+    from nipost.bids.collect import collect_derivatives
+    from nipost.bids.spec import Query, Spec
+
+    spec = Spec(items={'t1w': Query([{'suffix': 'T1w', 'desc': 'preproc'}], 'single')})
+    out = collect_derivatives(deriv_root, spec=spec, subject_id='01')
+
+    assert isinstance(out['t1w'], str)
+
+
+def test_optional_cardinality_is_rejected(deriv_root):
+    from nipost.bids.collect import collect_derivatives
+    from nipost.bids.spec import Query, Spec
+
+    spec = Spec(items={'t1w': Query([{'suffix': 'T1w', 'desc': 'preproc'}], 'optional')})
+
+    with pytest.raises(ValueError, match='Unknown cardinality'):
+        collect_derivatives(deriv_root, spec=spec, subject_id='01')
