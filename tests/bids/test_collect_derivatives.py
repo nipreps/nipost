@@ -387,6 +387,20 @@ def test_none_inside_a_value_list_means_absent(empty_root):
     ]
 
 
+def test_resolve_converts_none_list_members_to_query_none():
+    """PyBIDS already treats a raw `None` inside a value list as absence, so an
+    end-to-end test cannot distinguish whether `_resolve` performs this
+    conversion itself. Test `_resolve` directly instead.
+    """
+    from bids.layout import Query as PyBIDSQuery
+
+    from nipost.bids.collect import _resolve
+
+    resolved = _resolve({'space': ['run', None]}, base={}, scope=None, fieldmap_id=None)
+
+    assert resolved['space'] == ['run', PyBIDSQuery.NONE]
+
+
 def test_space_placeholder_substitutes(deriv_root):
     from nipost.bids.collect import collect_derivatives
     from nipost.bids.spec import Query, Spec
