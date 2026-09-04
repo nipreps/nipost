@@ -80,7 +80,11 @@ def sanitize_fieldmap_id(fieldmap_id: str) -> str:
 
 
 def load_spec(name_or_path: str | Path) -> Spec:
-    """Load a bundled spec by name (``anat``/``func``) or from a JSON path."""
+    """Load a bundled spec by name (``anat``/``func``/``fmap``) or from a path.
+
+    Bundled specs are YAML. A path is decoded as YAML too, so a JSON spec file
+    loads as well.
+    """
     text: str
     if isinstance(name_or_path, str) and name_or_path in ('anat', 'func', 'fmap'):
         text = (files('nipost.bids.data') / f'{name_or_path}.yml').read_text()
