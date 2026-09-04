@@ -50,15 +50,15 @@ def test_collect_covers_case_catalog(deriv_root):
 
     spec = Spec(
         items={
-            't1w_preproc': Query({'suffix': 'T1w', 'desc': 'preproc'}, 'single'),
-            't2w_preproc': Query({'suffix': 'T2w', 'desc': 'preproc'}, 'single'),
-            'tpms': Query({'suffix': 'probseg'}, 'ordered', labels=['GM', 'WM', 'CSF']),
-            'white': Query({'suffix': 'white', 'extension': '.surf.gii'}, 'pair'),
-            'ribbon': Query({'desc': 'ribbon', 'suffix': 'mask'}, 'single'),
-            't1w2t2w': Query({'from': 'T1w', 'to': 'T2w', 'suffix': 'xfm'}, 'single'),
+            't1w_preproc': Query([{'suffix': 'T1w', 'desc': 'preproc'}], 'single'),
+            't2w_preproc': Query([{'suffix': 'T2w', 'desc': 'preproc'}], 'single'),
+            'tpms': Query([{'suffix': 'probseg'}], 'ordered', labels=['GM', 'WM', 'CSF']),
+            'white': Query([{'suffix': 'white', 'extension': '.surf.gii'}], 'pair'),
+            'ribbon': Query([{'desc': 'ribbon', 'suffix': 'mask'}], 'single'),
+            't1w2t2w': Query([{'from': 'T1w', 'to': 'T2w', 'suffix': 'xfm'}], 'single'),
         },
         space_transforms={
-            'forward': Query({'from': 'T1w', 'to': None, 'suffix': 'xfm'}, 'single'),
+            'forward': Query([{'from': 'T1w', 'to': None, 'suffix': 'xfm'}], 'single'),
         },
     )
 
@@ -108,12 +108,12 @@ def test_func_flat_transforms_and_boldref2fmap_list(func_root):
     from nipost.bids.spec import Query, Spec
 
     spec = Spec(
-        items={'hmc_boldref': Query({'desc': 'hmc', 'suffix': 'boldref'}, 'single')},
+        items={'hmc_boldref': Query([{'desc': 'hmc', 'suffix': 'boldref'}], 'single')},
         transforms={
-            'hmc': Query({'from': 'orig', 'to': 'boldref', 'suffix': 'xfm'}, 'single'),
-            'boldref2anat': Query({'from': 'boldref', 'to': 'T1w', 'suffix': 'xfm'}, 'single'),
+            'hmc': Query([{'from': 'orig', 'to': 'boldref', 'suffix': 'xfm'}], 'single'),
+            'boldref2anat': Query([{'from': 'boldref', 'to': 'T1w', 'suffix': 'xfm'}], 'single'),
             'boldref2fmap': Query(
-                {'from': 'boldref', 'to': '{fieldmap_id}', 'desc': '*none*', 'suffix': 'xfm'},
+                [{'from': 'boldref', 'to': '{fieldmap_id}', 'desc': '*none*', 'suffix': 'xfm'}],
                 'list',
             ),
         },
@@ -139,7 +139,7 @@ def test_list_valued_entities(deriv_root):
     from nipost.bids.spec import Query, Spec
 
     spec = Spec(
-        items={'preproc': Query({'suffix': ['T1w', 'T2w'], 'desc': 'preproc'}, 'optional')}
+        items={'preproc': Query([{'suffix': ['T1w', 'T2w'], 'desc': 'preproc'}], 'optional')}
     )
     out = collect_derivatives(deriv_root, spec=spec, subject_id='01')
     assert len(out['preproc']) == 2  # matches both T1w and T2w
@@ -169,12 +169,14 @@ def test_boldref2fmap_list_zero_matches(func_root):
     spec = Spec(
         transforms={
             'boldref2fmap': Query(
-                {
-                    'from': 'boldref',
-                    'to': '{fieldmap_id}',
-                    'desc': '*none*',
-                    'suffix': 'xfm',
-                },
+                [
+                    {
+                        'from': 'boldref',
+                        'to': '{fieldmap_id}',
+                        'desc': '*none*',
+                        'suffix': 'xfm',
+                    }
+                ],
                 'list',
             ),
         },
@@ -195,3 +197,116 @@ def test_boldref2fmap_list_zero_matches(func_root):
     assert out['transforms']['boldref2fmap'] == [], (
         f'Expected [], got {out["transforms"]["boldref2fmap"]!r}'
     )
+
+
+@pytest.fixture
+def empty_root(tmp_path):
+    """A valid but empty derivative dataset, for tests that add their own files."""
+    root = tmp_path / 'empty'
+    root.mkdir()
+    (root / 'dataset_description.json').write_text(
+        json.dumps(
+            {
+                'Name': 'x',
+                'BIDSVersion': '1.8.0',
+                'DatasetType': 'derivative',
+                'GeneratedBy': [{'Name': 'nipost'}],
+            }
+        )
+    )
+    return root
+
+
+def test_first_matching_alternative_wins(empty_root):
+    """Alternatives are tried in order; the first with any match is used alone."""
+    from nipost.bids.collect import collect_derivatives
+    from nipost.bids.spec import Query, Spec
+
+    func = empty_root / 'sub-01' / 'func'
+    _write(func / 'sub-01_task-rest_space-run_boldref.nii.gz')
+    _write(func / 'sub-01_task-rest_desc-coreg_boldref.nii.gz')
+
+    spec = Spec(
+        items={
+            'run_boldref': Query(
+                [
+                    {'space': 'run', 'suffix': 'boldref'},
+                    {'desc': 'coreg', 'suffix': 'boldref'},
+                ],
+                'single',
+            )
+        }
+    )
+    out = collect_derivatives(empty_root, spec=spec, subject_id='01', entities={'task': 'rest'})
+
+    # Not a union across alternatives: only the first alternative's match.
+    assert out['run_boldref'].endswith('space-run_boldref.nii.gz')
+
+
+def test_later_alternative_used_when_earlier_misses(empty_root):
+    from nipost.bids.collect import collect_derivatives
+    from nipost.bids.spec import Query, Spec
+
+    func = empty_root / 'sub-01' / 'func'
+    _write(func / 'sub-01_task-rest_desc-coreg_boldref.nii.gz')
+
+    spec = Spec(
+        items={
+            'run_boldref': Query(
+                [
+                    {'space': 'run', 'suffix': 'boldref'},
+                    {'desc': 'coreg', 'suffix': 'boldref'},
+                ],
+                'single',
+            )
+        }
+    )
+    out = collect_derivatives(empty_root, spec=spec, subject_id='01', entities={'task': 'rest'})
+
+    assert out['run_boldref'].endswith('desc-coreg_boldref.nii.gz')
+
+
+def test_scope_drops_caller_entities(empty_root):
+    """A subject-level file is only reachable when run-level entities are dropped."""
+    from nipost.bids.collect import collect_derivatives
+    from nipost.bids.spec import Query, Spec
+
+    _write(empty_root / 'sub-01' / 'func' / 'sub-01_space-subject_boldref.nii.gz')
+
+    alternatives = [{'datatype': 'func', 'space': 'subject', 'suffix': 'boldref'}]
+    spec = Spec(
+        items={
+            'scoped': Query(alternatives, 'single', scope=['subject']),
+            'unscoped': Query(alternatives, 'single'),
+        }
+    )
+    out = collect_derivatives(
+        empty_root,
+        spec=spec,
+        subject_id='01',
+        entities={'task': 'rest', 'run': '01'},
+    )
+
+    assert out['scoped'].endswith('space-subject_boldref.nii.gz')
+    assert 'unscoped' not in out
+
+
+def test_scope_keeps_listed_entities(empty_root):
+    """`scope` is an allowlist, not a blanket drop: listed entities still filter."""
+    from nipost.bids.collect import collect_derivatives
+    from nipost.bids.spec import Query, Spec
+
+    _write(empty_root / 'sub-01' / 'func' / 'sub-01_space-subject_boldref.nii.gz')
+
+    spec = Spec(
+        items={
+            'other_subject': Query(
+                [{'datatype': 'func', 'space': 'subject', 'suffix': 'boldref'}],
+                'single',
+                scope=['subject'],
+            )
+        }
+    )
+    out = collect_derivatives(empty_root, spec=spec, subject_id='02', entities={'task': 'rest'})
+
+    assert 'other_subject' not in out
