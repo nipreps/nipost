@@ -18,6 +18,13 @@ _PLACEHOLDER_RE = re.compile(r'^\{.+\}$')
 _DROP = object()  # sentinel: this value contributes no constraint
 
 
+def _scoped(base: dict, scope: list[str] | None) -> dict:
+    """Restrict caller-supplied entities to the ones this query accepts."""
+    if scope is None:
+        return base
+    return {key: value for key, value in base.items() if key in scope}
+
+
 def _resolve_value(value, fieldmap_id: str | None, space: str | None):
     """Resolve one entity value — a scalar, or a single member of a value list.
 
@@ -79,13 +86,6 @@ def _resolve(
     return out
 
 
-def _scoped(base: dict, scope: list[str] | None) -> dict:
-    """Restrict caller-supplied entities to the ones this query accepts."""
-    if scope is None:
-        return base
-    return {key: value for key, value in base.items() if key in scope}
-
-
 def _lookup(
     layout,
     key: str,
@@ -106,8 +106,13 @@ def _lookup(
     return _cardinality(key, query, [])
 
 
-def _natural_key(path: str) -> list:
-    """Sort key ordering embedded integers numerically, so coeff2 precedes coeff10."""
+def _natural_key(path: str) -> list[int | str]:
+    """Sort key ordering embedded integers numerically, so coeff2 precedes coeff10.
+
+    ``re.split`` with a capture group always yields non-digit segments at
+    even indices and digit runs at odd ones, so within a single key an
+    ``int`` is never compared against a ``str`` at the same position.
+    """
     return [int(part) if part.isdigit() else part for part in re.split(r'(\d+)', path)]
 
 
@@ -176,7 +181,7 @@ def collect_derivatives(
             out[key] = result
 
     transforms: dict = {}
-    # Flat transforms (func: hmc / boldref2anat / boldref2fmap)
+    # Flat transforms (func: hmc / run2anat / run2fmap / run2session / ...)
     for key, query in spec.transforms.items():
         result = _lookup(layout, key, query, base, fieldmap_id)
         if result is not None:
