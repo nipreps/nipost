@@ -1,31 +1,21 @@
 # tests/bids/test_collect_derivatives.py
-import json
+import os
+from pathlib import Path
 
 import pytest
 
 pytest.importorskip('bids')
+pytest.importorskip('niworkflows')
 
 
-def _write(path, **entities):
+def _write(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('')
-    return path
 
 
 @pytest.fixture
-def deriv_root(tmp_path):
-    root = tmp_path / 'deriv'
-    root.mkdir()
-    (root / 'dataset_description.json').write_text(
-        json.dumps(
-            {
-                'Name': 'x',
-                'BIDSVersion': '1.8.0',
-                'DatasetType': 'derivative',
-                'GeneratedBy': [{'Name': 'nipost'}],
-            }
-        )
-    )
+def deriv_root(tmp_path, deriv_dataset) -> Path:
+    root = deriv_dataset(tmp_path / 'deriv')
     anat = root / 'sub-01' / 'anat'
     # dual T1w + T2w preproc (space-qualified case)
     _write(anat / 'sub-01_desc-preproc_T1w.nii.gz')
@@ -33,11 +23,12 @@ def deriv_root(tmp_path):
     # ordered TPMs
     for label in ('GM', 'WM', 'CSF'):
         _write(anat / f'sub-01_label-{label}_probseg.nii.gz')
-    # surface pair
+    # surface pair, ordered by hemi
     _write(anat / 'sub-01_hemi-L_white.surf.gii')
     _write(anat / 'sub-01_hemi-R_white.surf.gii')
-    # single mask
+    # single masks
     _write(anat / 'sub-01_desc-ribbon_mask.nii.gz')
+    _write(anat / 'sub-01_desc-brain_mask.nii.gz')
     # coreg + normalization transforms
     _write(anat / 'sub-01_from-T1w_to-T2w_mode-image_xfm.txt')
     _write(anat / 'sub-01_from-T1w_to-MNI152NLin2009cAsym_mode-image_xfm.h5')
@@ -82,25 +73,20 @@ def test_collect_covers_case_catalog(deriv_root):
 
 
 @pytest.fixture
-def func_root(tmp_path):
-    root = tmp_path / 'fderiv'
-    root.mkdir()
-    (root / 'dataset_description.json').write_text(
-        json.dumps(
-            {
-                'Name': 'x',
-                'BIDSVersion': '1.8.0',
-                'DatasetType': 'derivative',
-                'GeneratedBy': [{'Name': 'nipost'}],
-            }
-        )
-    )
+def func_root(tmp_path, deriv_dataset):
+    root = deriv_dataset(tmp_path / 'fderiv')
     func = root / 'sub-01' / 'func'
     _write(func / 'sub-01_task-rest_desc-hmc_boldref.nii.gz')
     _write(func / 'sub-01_task-rest_from-orig_to-boldref_mode-image_desc-hmc_xfm.txt')
     _write(func / 'sub-01_task-rest_from-boldref_to-T1w_mode-image_desc-coreg_xfm.txt')
     _write(func / 'sub-01_task-rest_from-boldref_to-auto00000_mode-image_xfm.txt')
     return root
+
+
+@pytest.fixture
+def empty_root(tmp_path, deriv_dataset):
+    """A valid but empty derivative dataset, for tests that add their own files."""
+    return deriv_dataset(tmp_path / 'empty')
 
 
 def test_func_flat_transforms_and_boldref2fmap_list(func_root):
