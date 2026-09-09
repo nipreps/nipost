@@ -51,9 +51,9 @@ def test_collect_fieldmaps_uses_the_passed_spec_not_the_bundled_one(fmap_deriv):
     out = collect_fieldmaps(fmap_deriv, entities={'subject': '01'}, spec=spec)
 
     assert 'fieldmaps' not in out
-    assert out['custom_fmaps']['auto00000']['preproc'].endswith(
-        'fmapid-auto00000_desc-preproc_fieldmap.nii.gz'
-    )
+    preproc = out['custom_fmaps']['auto00000']['preproc']
+    assert isinstance(preproc, str)
+    assert preproc.endswith('fmapid-auto00000_desc-preproc_fieldmap.nii.gz')
 
 
 @pytest.fixture
@@ -105,7 +105,9 @@ def test_collect_fieldmaps_ignores_json_sidecars(tmp_path, deriv_dataset):
 
     out = collect_fieldmaps(root, entities={'subject': '01'})
 
-    assert out['fieldmaps']['auto00000']['fieldmap'].endswith('desc-preproc_fieldmap.nii.gz')
+    fieldmap = out['fieldmaps']['auto00000']['fieldmap']
+    assert isinstance(fieldmap, str)
+    assert fieldmap.endswith('desc-preproc_fieldmap.nii.gz')
     assert out['fieldmaps']['auto00000']['coeffs'] == [
         str(fmap / 'sub-01_fmapid-auto00000_desc-coeff_fieldmap.nii.gz')
     ]
@@ -167,7 +169,7 @@ def test_collect_fieldmaps_takes_entities_by_keyword_only(fmap_deriv):
     from nipost.bids.collect import collect_fieldmaps
 
     with pytest.raises(TypeError, match='positional'):
-        collect_fieldmaps(fmap_deriv, {'subject': '01'})
+        collect_fieldmaps(fmap_deriv, {'subject': '01'})  # type: ignore
 
     out = collect_fieldmaps(fmap_deriv, entities={'subject': '01'})
 

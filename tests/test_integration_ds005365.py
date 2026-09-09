@@ -53,11 +53,10 @@ pytestmark = pytest.mark.skipif(
 
 def test_demo_reproduces_checksum() -> None:
     """Reproduce the fmriprep-resampling-demo checksum using only nipost."""
-    import nibabel as nb
-
     # Needed for nipreps.json to support nonstandard entities
     import niworkflows.data
     from bids import BIDSLayout
+    from nibabel.spatialimages import SpatialImage
     from nilearn import image as nli
     from templateflow import TemplateFlowClient
 
@@ -69,6 +68,9 @@ def test_demo_reproduces_checksum() -> None:
     )
     from nipost.bids import collect_derivatives, collect_fieldmaps
     from nipost.bids.spec import load_spec
+
+    # nb.load variant that validates API compatiblity
+    from nipost.epi import load_api
 
     tf = TemplateFlowClient()
 
@@ -135,11 +137,12 @@ def test_demo_reproduces_checksum() -> None:
 
     coeff_files = fmaps['fieldmaps'][fmapid]['coeffs']
     fmapref_file = fmaps['fieldmaps'][fmapid]['magnitude']
+    assert isinstance(fmapref_file, str)
 
-    bold, pe_info = prepare_epi(nb.load(bold_file), bold_file.get_metadata())
+    bold, pe_info = prepare_epi(load_api(bold_file, SpatialImage), bold_file.get_metadata())
     MNI = nli.crop_img(MNI_file, copy_header=True)
-    fmapref = nb.load(fmapref_file)
-    coeffs = [nb.load(path) for path in coeff_files]
+    fmapref = load_api(fmapref_file, SpatialImage)
+    coeffs = [load_api(path, SpatialImage) for path in coeff_files]
 
     bold2std = load_transforms(
         bold2std_xfms, inverse=[False]

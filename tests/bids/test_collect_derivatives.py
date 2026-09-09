@@ -842,7 +842,7 @@ def test_cardinality_field_is_rejected():
     from nipost.bids.spec import Query
 
     with pytest.raises(TypeError, match='cardinality'):
-        Query([{'suffix': 'T1w', 'desc': 'preproc'}], cardinality='optional')
+        Query([{'suffix': 'T1w', 'desc': 'preproc'}], cardinality='optional')  # type: ignore
 
 
 @pytest.fixture
