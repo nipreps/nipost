@@ -1,0 +1,57 @@
+images:
+  queries:
+    t1w_preproc:
+      entities:
+        - datatype: anat
+          suffix: T1w
+          desc: preproc
+          space: null
+          extension: [.nii.gz, .nii]
+    t2w_preproc:
+      entities:
+        - datatype: anat
+          suffix: T2w
+          desc: preproc
+          space: null
+          extension: [.nii.gz, .nii]
+    mask:
+      entities:
+        - datatype: anat
+          suffix: mask
+          desc: brain
+          space: null
+          extension: [.nii.gz, .nii]
+    dseg:
+      entities:
+        - datatype: anat
+          suffix: dseg
+          desc: null
+          space: null
+          extension: [.nii.gz, .nii]
+    tpms:
+      entities:
+        - datatype: anat
+          suffix: probseg
+          space: null
+          label: [GM, WM, CSF]
+          extension: [.nii.gz, .nii]
+      multi: { order: label }
+    anat_ribbon:
+      entities:
+        - datatype: anat
+          desc: ribbon
+          suffix: mask
+          extension: [.nii.gz, .nii]
+transforms:
+  per: space
+  queries:
+    forward:
+      entities:
+        - from: T1w
+          to: "{space}"
+          suffix: xfm
+    reverse:
+      entities:
+        - from: "{space}"
+          to: T1w
+          suffix: xfm

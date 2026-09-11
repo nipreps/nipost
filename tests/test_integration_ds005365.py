@@ -53,11 +53,10 @@ pytestmark = pytest.mark.skipif(
 
 def test_demo_reproduces_checksum() -> None:
     """Reproduce the fmriprep-resampling-demo checksum using only nipost."""
-    import nibabel as nb
-
     # Needed for nipreps.json to support nonstandard entities
     import niworkflows.data
     from bids import BIDSLayout
+    from nibabel.spatialimages import SpatialImage
     from nilearn import image as nli
     from templateflow import TemplateFlowClient
 
@@ -70,6 +69,9 @@ def test_demo_reproduces_checksum() -> None:
     from nipost.bids import collect_derivatives, collect_fieldmaps
     from nipost.bids.spec import load_spec
 
+    # nb.load variant that validates API compatiblity
+    from nipost.epi import load_api
+
     tf = TemplateFlowClient()
 
     raw = BIDSLayout(data / 'ds005365')
@@ -79,16 +81,19 @@ def test_demo_reproduces_checksum() -> None:
     bold_file = raw.get(suffix='bold', extension='.nii.gz')[0]
     MNI_file = tf.get(template=template, suffix='mask', desc='brain', resolution='02')
 
+    # Spec-declared entities override these, so the raw source entities
+    # (suffix='bold', extension='.nii.gz') can be passed through as-is.
     bold_entities = bold_file.get_entities()
-    for ent in ('datatype', 'suffix', 'extension'):
-        bold_entities.pop(ent, None)
     subject = bold_entities['subject']
 
+    # No cohort in this template, so params can take it as-is. A cohort space
+    # would need sanitize_space() first -- collect_derivatives uses param
+    # values verbatim.
     anat = collect_derivatives(
         deriv_root,
         spec=load_spec('anat'),
-        subject_id=subject,
-        std_spaces=[template],
+        entities={'subject': subject},
+        params={'space': [template]},
     )
     func = collect_derivatives(
         deriv_root,
@@ -97,15 +102,28 @@ def test_demo_reproduces_checksum() -> None:
     )
     fmaps = collect_fieldmaps(deriv_root, entities={'subject': subject})
 
-    hmc_xfm = func['transforms']['hmc']
-    boldref2anat_xfm = func['transforms']['boldref2anat']
+    transforms = func['transforms']
     anat2std_xfm = anat['transforms'][template]['forward']
-    bold2std_xfms = [hmc_xfm, boldref2anat_xfm, anat2std_xfm]
 
-    # boldref2fmap is a list; [0] is the actual fmap xfm (no desc entity)
-    boldref2fmap_xfm = func['transforms']['boldref2fmap'][0]
-    fmap2std_xfms = [boldref2fmap_xfm, boldref2anat_xfm, anat2std_xfm]
-    fmap2std_inv = [True, False, False]
+    # Select the boldref->anat leg. ds005365 was preprocessed per-run, so
+    # run2anat is present; a session- or subject-level dataset instead
+    # supplies a run2<level> / <level>2anat pair.
+    run2anat_xfms = next(
+        [transforms[k] for k in keyset]
+        for keyset in [
+            ['run2anat'],
+            ['run2session', 'session2anat'],
+            ['run2subject', 'subject2anat'],
+        ]
+        if all(k in transforms for k in keyset)
+    )
+
+    bold2std_xfms = [transforms['hmc'], *run2anat_xfms, anat2std_xfm]
+
+    # run2fmap is a list; [0] is the fieldmap transform
+    run2fmap_xfm = transforms['run2fmap'][0]
+    fmap2std_xfms = [run2fmap_xfm, *run2anat_xfms, anat2std_xfm]
+    fmap2std_inv = [True, *[False] * (len(run2anat_xfms) + 1)]
 
     # The notebook used: deriv.files[boldref2fmap_xfm].entities['to']
     # We replicate this via BIDSLayout with the nipreps config.
@@ -115,22 +133,23 @@ def test_demo_reproduces_checksum() -> None:
         config=[niworkflows.data.load('nipreps.json')],
         validate=False,
     )
-    fmapid = deriv_layout.files[boldref2fmap_xfm].entities['to']
+    fmapid = deriv_layout.files[run2fmap_xfm].entities['to']
 
-    coeff_file = fmaps[fmapid]['coeffs']
-    fmapref_file = fmaps[fmapid]['magnitude']
+    coeff_files = fmaps['fieldmaps'][fmapid]['coeffs']
+    fmapref_file = fmaps['fieldmaps'][fmapid]['magnitude']
+    assert isinstance(fmapref_file, str)
 
-    bold, pe_info = prepare_epi(nb.load(bold_file), bold_file.get_metadata())
+    bold, pe_info = prepare_epi(load_api(bold_file, SpatialImage), bold_file.get_metadata())
     MNI = nli.crop_img(MNI_file, copy_header=True)
-    fmapref = nb.load(fmapref_file)
-    coeff = nb.load(coeff_file)
+    fmapref = load_api(fmapref_file, SpatialImage)
+    coeffs = [load_api(path, SpatialImage) for path in coeff_files]
 
     bold2std = load_transforms(
         bold2std_xfms, inverse=[False]
     )  # single-element inverse list broadcasts to all transforms in the chain
     fmap2std = load_transforms(fmap2std_xfms, inverse=fmap2std_inv)
 
-    fmap_std = reconstruct_fieldmap([coeff], fmapref, MNI, fmap2std)
+    fmap_std = reconstruct_fieldmap(coeffs, fmapref, MNI, fmap2std)
 
     bold_mni = resample_image(
         source=bold,
