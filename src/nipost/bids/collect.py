@@ -188,7 +188,7 @@ def collect_derivatives(
         A query's ``scope`` may narrow which of these it accepts.
     params
         Values for the placeholders the spec references. A group declaring
-        ``over: <name>`` iterates ``params[<name>]``; any other placeholder
+        ``per: <name>`` iterates ``params[<name>]``; any other placeholder
         takes ``params[<name>]`` as a scalar and drops its constraint when
         unbound. Values are used verbatim, so apply
         :func:`nipost.bids.spec.sanitize_space` or
@@ -199,7 +199,7 @@ def collect_derivatives(
     dict
         One key per group declared by ``spec``, always present even when the
         group collected nothing. A plain group maps to ``{query: result}``; a
-        group with ``over`` maps to ``{param value: {query: result}}``.
+        group with ``per`` maps to ``{param value: {query: result}}``.
     """
     layout = get_layout(Path(derivatives_dir))
     base: dict = dict(entities or {})
@@ -207,19 +207,19 @@ def collect_derivatives(
 
     out: dict = {}
     for group_name, group in spec.items():
-        if group.over is None:
+        if group.per is None:
             out[group_name] = _run_queries(layout, group, base, supplied)
             continue
 
-        values = supplied.get(group.over) or []
+        values = supplied.get(group.per) or []
         if isinstance(values, str) or not isinstance(values, Sequence):
             raise TypeError(
-                f'Group {group_name!r} iterates over {group.over!r}, so '
-                f'params[{group.over!r}] must be a sequence of values, not '
+                f'Group {group_name!r} iterates over {group.per!r}, so '
+                f'params[{group.per!r}] must be a sequence of values, not '
                 f'{values!r}'
             )
         out[group_name] = {
-            value: _run_queries(layout, group, base, {**supplied, group.over: value})
+            value: _run_queries(layout, group, base, {**supplied, group.per: value})
             for value in values
         }
     return out

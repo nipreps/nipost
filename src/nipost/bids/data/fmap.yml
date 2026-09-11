@@ -1,5 +1,5 @@
 fieldmaps:
-  over: fmapid
+  per: fmapid
   queries:
     fieldmap:
       entities:

@@ -43,7 +43,7 @@ images:
           suffix: mask
           extension: [.nii.gz, .nii]
 transforms:
-  over: space
+  per: space
   queries:
     forward:
       entities:

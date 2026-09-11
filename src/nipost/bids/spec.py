@@ -113,14 +113,14 @@ class Group(Struct, forbid_unknown_fields=True):
     queries
         The group's named queries. Non-empty: a group with no queries has no
         purpose, and an empty one is more likely a typo than an intention.
-    over
+    per
         Name of a parameter this group iterates over. Each query runs once per
-        value in ``params[over]``, with that value bound as a placeholder, and
+        value in ``params[per]``, with that value bound as a placeholder, and
         results nest under the value. ``None`` runs each query once.
     """
 
     queries: Annotated[dict[str, Query], Meta(min_length=1)]
-    over: str | None = None
+    per: str | None = None
 
 
 type Spec = dict[str, Group]

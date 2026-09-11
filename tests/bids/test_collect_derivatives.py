@@ -57,7 +57,7 @@ def test_collect_covers_case_catalog(deriv_root):
             }
         ),
         'transforms': Group(
-            over='space',
+            per='space',
             queries={
                 'forward': Query([{'from': 'T1w', 'to': '{space}', 'suffix': 'xfm'}]),
             },
@@ -278,7 +278,7 @@ def test_indexed_group_nests_under_each_param_value(deriv_root):
 
     spec = {
         'transforms': Group(
-            over='space',
+            per='space',
             queries={'forward': Query([{'from': 'T1w', 'to': '{space}', 'suffix': 'xfm'}])},
         )
     }
@@ -301,7 +301,7 @@ def test_indexed_group_with_no_param_values_is_empty(deriv_root):
 
     spec = {
         'transforms': Group(
-            over='space',
+            per='space',
             queries={'forward': Query([{'from': 'T1w', 'to': '{space}', 'suffix': 'xfm'}])},
         )
     }
@@ -318,7 +318,7 @@ def test_indexed_group_rejects_a_bare_string_param(deriv_root):
 
     spec = {
         'transforms': Group(
-            over='space',
+            per='space',
             queries={'forward': Query([{'from': 'T1w', 'to': '{space}', 'suffix': 'xfm'}])},
         )
     }
@@ -341,7 +341,7 @@ def test_indexed_group_rejects_a_non_iterable_param(empty_root):
 
     spec = {
         'transforms': Group(
-            over='space',
+            per='space',
             queries={'forward': Query([{'from': 'T1w', 'to': '{space}', 'suffix': 'xfm'}])},
         )
     }
@@ -363,7 +363,7 @@ def test_output_key_is_the_param_value_verbatim(deriv_root):
 
     spec = {
         'transforms': Group(
-            over='space',
+            per='space',
             queries={'forward': Query([{'from': 'T1w', 'to': '{space}', 'suffix': 'xfm'}])},
         )
     }
@@ -724,7 +724,7 @@ def test_resolve_drops_whole_constraint_when_list_placeholder_empties_it():
 
 
 def test_resolve_raises_when_a_list_param_binds_a_query_level_placeholder():
-    """A query-level placeholder (not bound by an enclosing `over`) must take
+    """A query-level placeholder (not bound by an enclosing `per`) must take
     `params[name]` as a scalar. Without this check, a list param silently
     becomes a *nested* list in the PyBIDS filter dict -- `{'to': [['a', 'b']]}`
     -- which PyBIDS matches nothing against and raises nothing for."""
@@ -769,7 +769,7 @@ def test_space_placeholder_substitutes(deriv_root):
 
     spec = {
         'transforms': Group(
-            over='space',
+            per='space',
             queries={
                 'forward': Query([{'from': 'T1w', 'to': '{space}', 'suffix': 'xfm'}]),
             },
@@ -795,7 +795,7 @@ def test_space_placeholder_substitutes_cohort(empty_root):
 
     spec = {
         'transforms': Group(
-            over='space',
+            per='space',
             queries={
                 'forward': Query([{'from': 'T1w', 'to': '{space}', 'suffix': 'xfm'}]),
             },

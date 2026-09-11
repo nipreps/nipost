@@ -157,7 +157,7 @@ def test_order_rejects_a_placeholder_in_its_value_list():
     ``_reduce_ordered`` matches the declared axis against entity values read
     out of filenames, which never contain ``{...}``. So such a query omitted
     its key for every binding of the parameter -- bound, unbound, or supplied
-    by an enclosing ``over`` -- and did it silently, absence being a legal
+    by an enclosing ``per`` -- and did it silently, absence being a legal
     outcome. Rejected at load rather than resolved: see the design's section 4.
     """
     with pytest.raises(msgspec.ValidationError, match='placeholder'):
@@ -259,7 +259,7 @@ def test_query_rejects_a_top_level_order_field():
 
 def test_group_requires_queries():
     with pytest.raises(msgspec.ValidationError, match='queries'):
-        msgspec.convert({'over': 'space'}, type=Group)
+        msgspec.convert({'per': 'space'}, type=Group)
 
 
 def test_group_rejects_empty_queries():
@@ -272,10 +272,10 @@ def test_group_rejects_unknown_fields():
         msgspec.convert({'querys': {'x': _query()}}, type=Group)
 
 
-def test_group_decodes_over():
-    group = msgspec.convert({'queries': {'x': _query()}, 'over': 'space'}, type=Group)
+def test_group_decodes_per():
+    group = msgspec.convert({'queries': {'x': _query()}, 'per': 'space'}, type=Group)
 
-    assert group.over == 'space'
+    assert group.per == 'space'
     assert list(group.queries) == ['x']
 
 
@@ -302,9 +302,9 @@ def test_bundled_spec_group_names():
 
 
 def test_indexed_groups_declare_their_parameter():
-    assert load_spec('anat')['transforms'].over == 'space'
-    assert load_spec('fmap')['fieldmaps'].over == 'fmapid'
-    assert load_spec('func')['transforms'].over is None
+    assert load_spec('anat')['transforms'].per == 'space'
+    assert load_spec('fmap')['fieldmaps'].per == 'fmapid'
+    assert load_spec('func')['transforms'].per is None
 
 
 def test_load_spec_reads_a_path(tmp_path):

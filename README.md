@@ -108,7 +108,7 @@ Requires `pybids`, `niworkflows`, and `msgspec[yaml]`.
 | `nipost.bids.sanitize_space`       | Convert TemplateFlow cohort syntax to a BIDS entity value.                                 |
 | `nipost.bids.sanitize_fieldmap_id` | Convert an fMRIPrep fieldmap ID to a BIDS `fmapid` value.                                  |
 | `nipost.bids.spec.Spec`            | A spec: a mapping of group names to `Group`s. Alias for `dict[str, Group]`.                |
-| `nipost.bids.spec.Group`           | A named group of queries, optionally indexed by a parameter via `over`.                    |
+| `nipost.bids.spec.Group`           | A named group of queries, optionally indexed by a parameter via `per`.                    |
 | `nipost.bids.spec.Query`           | A single named lookup: entity alternatives, result shape, and caller-entity scope.         |
 | `nipost.bids.spec.Ordered`         | The `multi` variant declaring an ordering axis: `Ordered(order='label')`.                  |
 
@@ -138,7 +138,7 @@ surface.
 ### Spec schema
 
 A spec is a mapping of group names you choose to groups of named queries. A
-group may declare `over: <param>`, which runs its queries once per value of
+group may declare `per: <param>`, which runs its queries once per value of
 that parameter and nests the results under each value. The bundled specs are
 YAML; `load_spec` reads any path, and a JSON spec file works too, JSON being
 valid YAML.
@@ -158,7 +158,7 @@ example_images:
           label: [GM, WM, CSF]
       multi: { order: label }
 transforms:
-  over: space
+  per: space
   queries:
     forward:
       entities:
@@ -193,8 +193,8 @@ transforms:
   bound parameters substitute, unbound ones drop the constraint.
   A placeholder is rejected outright in the value list of an ordering entity
   (see `multi`, above). A parameter bound this way — inside a query's
-  `entities`, rather than by an enclosing `over` — must be a scalar; only a
-  group's `over` parameter may be a
+  `entities`, rather than by an enclosing `per` — must be a scalar; only a
+  group's `per` parameter may be a
   sequence, since that is the one place a sequence has a defined meaning
   (one iteration per value). Binding a sequence anywhere else raises
   `TypeError` naming the parameter.

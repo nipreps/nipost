@@ -41,7 +41,7 @@ def test_collect_fieldmaps_uses_the_passed_spec_not_the_bundled_one(fmap_deriv):
 
     spec = {
         'custom_fmaps': Group(
-            over='fmapid',
+            per='fmapid',
             queries={
                 'preproc': Query([{'datatype': 'fmap', 'fmapid': '{fmapid}', 'desc': 'preproc'}])
             },
