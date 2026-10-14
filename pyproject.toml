@@ -20,6 +20,7 @@ dependencies = [
 bids = [
     "pybids >= 0.21",
     "niworkflows >= 1.14.4",
+    "msgspec[yaml]>=0.19",
 ]
 
 [dependency-groups]
