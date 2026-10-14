@@ -1,25 +1,12 @@
 # tests/bids/test_collect_fieldmaps.py
-import json
-
 import pytest
 
 pytest.importorskip('bids')
 
 
 @pytest.fixture
-def fmap_deriv(tmp_path):
-    root = tmp_path / 'deriv'
-    (root).mkdir()
-    (root / 'dataset_description.json').write_text(
-        json.dumps(
-            {
-                'Name': 'x',
-                'BIDSVersion': '1.8.0',
-                'DatasetType': 'derivative',
-                'GeneratedBy': [{'Name': 'nipost'}],
-            }
-        )
-    )
+def fmap_deriv(tmp_path, deriv_dataset):
+    root = deriv_dataset(tmp_path / 'deriv')
     fmap = root / 'sub-01' / 'fmap'
     fmap.mkdir(parents=True)
     for name in (

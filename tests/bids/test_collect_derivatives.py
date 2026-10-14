@@ -13,19 +13,10 @@ def _write(path, **entities):
 
 
 @pytest.fixture
-def deriv_root(tmp_path):
-    root = tmp_path / 'deriv'
-    root.mkdir()
-    (root / 'dataset_description.json').write_text(
-        json.dumps(
-            {
-                'Name': 'x',
-                'BIDSVersion': '1.8.0',
-                'DatasetType': 'derivative',
-                'GeneratedBy': [{'Name': 'nipost'}],
-            }
-        )
-    )
+def deriv_root(tmp_path, deriv_dataset) -> Path:
+    # Plausible-ish derivative dataset
+    # JSON files are excluded to avoid specifying extensions in all tests
+    root = deriv_dataset(tmp_path / 'deriv')
     anat = root / 'sub-01' / 'anat'
     # dual T1w + T2w preproc (space-qualified case)
     _write(anat / 'sub-01_desc-preproc_T1w.nii.gz')
@@ -42,6 +33,12 @@ def deriv_root(tmp_path):
     _write(anat / 'sub-01_from-T1w_to-T2w_mode-image_xfm.txt')
     _write(anat / 'sub-01_from-T1w_to-MNI152NLin2009cAsym_mode-image_xfm.h5')
     return root
+
+
+@pytest.fixture
+def empty_root(tmp_path, deriv_dataset):
+    """A valid but empty derivative dataset, for tests that add their own files."""
+    return deriv_dataset(tmp_path / 'empty')
 
 
 def test_collect_covers_case_catalog(deriv_root):
