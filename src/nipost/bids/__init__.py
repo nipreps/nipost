@@ -1,13 +1,17 @@
-"""BIDS derivative discovery (requires the ``nipost[bids]`` extra)."""
+"""BIDS derivatives discovery (requires the ``nipost[bids]`` extra)."""
 
 try:
-    import bids  # noqa: F401
-    import niworkflows  # noqa: F401
+    from nipost.bids.collect import collect_derivatives, collect_fieldmaps
+    from nipost.bids.spec import load_spec, sanitize_fieldmap_id, sanitize_space
 except ImportError as exc:  # pragma: no cover
     raise ImportError(
         "nipost.bids requires the 'bids' extra. Install with: pip install 'nipost[bids]'"
     ) from exc
 
-from nipost.bids.collect import collect_derivatives, collect_fieldmaps
-
-__all__ = ['collect_derivatives', 'collect_fieldmaps']
+__all__ = [
+    'collect_derivatives',
+    'collect_fieldmaps',
+    'load_spec',
+    'sanitize_fieldmap_id',
+    'sanitize_space',
+]
