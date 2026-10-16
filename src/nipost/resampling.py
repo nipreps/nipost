@@ -8,7 +8,6 @@ from functools import partial
 
 import nibabel as nb
 import nitransforms as nt
-import nitransforms.resampling
 import numpy as np
 from scipy import ndimage as ndi
 
@@ -17,6 +16,8 @@ from nipost._async import worker
 TYPE_CHECKING = False
 if TYPE_CHECKING:
     from typing import Literal
+
+    from nibabel.spatialimages import SpatialImage
 
     InterpolationOrder = Literal[0, 1, 2, 3, 4, 5]
     InterpolationMode = Literal[
@@ -305,11 +306,11 @@ def resample_series(
     )
 
 
-def resample_image(
-    source: nb.Nifti1Image,
-    target: nb.Nifti1Image,
+def resample_image[T: SpatialImage](
+    source: SpatialImage,
+    target: T,
     transforms: nt.TransformChain,
-    fieldmap: nb.Nifti1Image | None,
+    fieldmap: SpatialImage | None,
     pe_info: list[tuple[int, float]] | None,
     jacobian: bool = True,
     nthreads: int = 1,
@@ -318,7 +319,7 @@ def resample_image(
     mode: InterpolationMode = 'grid-constant',
     cval: float = 0.0,
     prefilter: bool = True,
-) -> nb.Nifti1Image:
+) -> T:
     """Resample a 3- or 4D image into a target space, applying head-motion
     and susceptibility-distortion correction simultaneously.
 
@@ -387,7 +388,7 @@ def resample_image(
     if fieldmap is None:
         fieldmap = nb.Nifti1Image(np.zeros(target.shape[:3], dtype='f4'), target.affine)
     if pe_info is None:
-        pe_info = [[0, 0] for _ in range(source.shape[-1])]  # type: ignore[misc]  # matches untyped fMRIPrep source
+        pe_info = [(0, 0) for _ in range(source.shape[-1])]
 
     resampled_data = resample_series(
         data=source.get_fdata(dtype='f4'),
@@ -403,7 +404,7 @@ def resample_image(
         cval=cval,
         prefilter=prefilter,
     )
-    resampled_img = nb.Nifti1Image(resampled_data, target.affine, target.header)
+    resampled_img = target.__class__(resampled_data, target.affine, target.header)
     resampled_img.set_data_dtype('f4')
     # Preserve zooms of additional dimensions
     resampled_img.header.set_zooms(target.header.get_zooms()[:3] + source.header.get_zooms()[3:])

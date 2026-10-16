@@ -4,8 +4,8 @@ from warnings import warn
 
 import nibabel as nb
 import nitransforms as nt
-import nitransforms.resampling
 import numpy as np
+from nibabel.spatialimages import SpatialImage
 from scipy.interpolate import BSpline
 from scipy.sparse import hstack as sparse_hstack
 from scipy.sparse import kron, lil_array
@@ -13,7 +13,7 @@ from scipy.sparse import kron, lil_array
 from nipost.epi import ensure_positive_cosines
 
 
-def grid_bspline_weights(target_nii, ctrl_nii, dtype='float32'):
+def grid_bspline_weights(target_nii: SpatialImage, ctrl_nii: SpatialImage, dtype='float32'):
     r"""
     Evaluate tensor-product B-Spline weights on a grid.
 
@@ -43,7 +43,7 @@ def grid_bspline_weights(target_nii, ctrl_nii, dtype='float32'):
 
     Parameters
     ----------
-    target_nii :  :obj:`nibabel.spatialimages`
+    target_nii :  :obj:`nibabel.spatialimages.SpatialImage`
         An spatial image object (typically, a :obj:`~nibabel.nifti1.Nifti1Image`)
         embedding the target EPI image to be corrected.
         Provides the location of the *N* samples (total number of voxels) in the space.
@@ -129,9 +129,9 @@ def as_affine(xfm: nt.base.TransformBase) -> nt.Affine | None:
 
 
 def reconstruct_fieldmap(
-    coefficients: list[nb.Nifti1Image],
-    fmap_reference: nb.Nifti1Image,
-    target: nb.Nifti1Image,
+    coefficients: list[SpatialImage],
+    fmap_reference: SpatialImage,
+    target: SpatialImage,
     transforms: nt.TransformChain,
 ) -> nb.Nifti1Image:
     """Resample a fieldmap from B-Spline coefficients into a target space
