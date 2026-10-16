@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from pathlib import Path
 
 from bids.layout import Query as BIDSQuery
@@ -36,13 +36,7 @@ def _resolve(alt: dict, base: dict, scope: list[str] | None, params: dict) -> di
             if match is None:
                 resolved.append(declared)
                 continue
-            item = params[match.group(1)]
-            if isinstance(item, (list, tuple)):
-                raise TypeError(
-                    f'params[{match.group(1)!r}] must be a scalar for placeholder '
-                    f'{declared!r} in entity {key!r}'
-                )
-            resolved.append(item)
+            resolved.append(params[match.group(1)])
         out[key] = resolved
     return out
 
@@ -182,10 +176,12 @@ def collect_derivatives(
     ------
     TypeError
         If a group's ``per`` parameter is missing or contains a
-        ``bids.layout.Query`` member, or a placeholder has no value in
-        ``params``.
+        ``bids.layout.Query`` member, a placeholder has no value in
+        ``params``, or a list or tuple is bound to a scalar placeholder.
+    ValueError
+        If a query matches more than one file in one alternative, or two
+        files share an ordering value.
     """
-    layout = get_layout(Path(derivatives_dir))
     base: dict = dict(entities or {})
     supplied: dict = dict(params or {})
 
@@ -201,14 +197,21 @@ def collect_derivatives(
             values = supplied[group.per]
             if values is None:
                 values = []
-            elif isinstance(values, str) or not isinstance(values, Sequence):
+            elif isinstance(values, str) or not isinstance(values, Iterable):
                 values = [values]
+            else:
+                values = list(values)
+            if any(isinstance(value, (list, tuple)) for value in values):
+                raise TypeError(
+                    f'Group {group_name!r}: params[{group.per!r}] cannot bind a list '
+                    f'or tuple to a scalar placeholder'
+                )
             if any(isinstance(value, BIDSQuery) for value in values):
                 raise TypeError(
                     f'Group {group_name!r}: params[{group.per!r}] cannot contain '
                     f'bids.layout.Query members'
                 )
-            iterations[group_name] = list(values)
+            iterations[group_name] = values
         else:
             iterations[group_name] = None
         for query_name, query in group.queries.items():
@@ -218,6 +221,14 @@ def collect_derivatives(
                         f'{group_name}/{query_name} (alternative {i}) has no value for '
                         f'params {missing}'
                     )
+                for name in names:
+                    if name != group.per and isinstance(supplied.get(name), (list, tuple)):
+                        raise TypeError(
+                            f'{group_name}/{query_name} (alternative {i}): '
+                            f'params[{name!r}] must be a scalar, not a list or tuple'
+                        )
+
+    layout = get_layout(Path(derivatives_dir))
 
     def _run_queries(prefix: str, group: Group, params: dict) -> dict:
         """Run every query in a group once, dropping the keys that found nothing."""
