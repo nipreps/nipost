@@ -360,9 +360,30 @@ def test_indexed_group_takes_a_scalar_none_or_sequence(deriv_root):
     assert _forward(deriv_root, ['MNI152NLin2009cAsym', 'fsnative'])['fsnative'] == {}
 
 
+@pytest.mark.parametrize(
+    'values',
+    [
+        {'MNI152NLin2009cAsym', 'fsnative'},
+        dict.fromkeys(['MNI152NLin2009cAsym', 'fsnative']).keys(),
+        (v for v in ('MNI152NLin2009cAsym', 'fsnative')),
+    ],
+    ids=['set', 'dict_keys', 'generator'],
+)
+def test_indexed_group_takes_any_non_str_iterable(deriv_root, values):
+    expected = _forward(deriv_root, ['MNI152NLin2009cAsym', 'fsnative'])
+    out = _forward(deriv_root, values)
+    assert set(out) == {'MNI152NLin2009cAsym', 'fsnative'}
+    assert out == expected
+
+
 def test_indexed_group_requires_its_parameter(deriv_root):
     with pytest.raises(TypeError, match=r"'transforms'.*'space'"):
         collect_derivatives(deriv_root, spec=FORWARD, entities={'subject': '01'})
+
+
+def test_missing_per_param_raises_before_checking_the_layout(tmp_path):
+    with pytest.raises(TypeError, match=r"'transforms'.*'space'"):
+        collect_derivatives(tmp_path / 'does-not-exist', spec=FORWARD, entities={'subject': '01'})
 
 
 @pytest.mark.parametrize(
@@ -525,16 +546,6 @@ def test_unbound_placeholder_raises(deriv_root):
     }
     with pytest.raises(TypeError, match=r"transforms/run2fmap \(alternative 0\).*'fmapid'"):
         collect_derivatives(deriv_root, spec=spec, entities={'subject': '01'})
-
-
-def test_resolve_raises_when_a_list_param_binds_a_query_level_placeholder():
-    # Multiple values for parameters would be a feature in search of a use case.
-    # If this is eventually supported, it will be more complicated than just removing
-    # the check, so error for now.
-
-    # Check against `{fmapid}` to ensure the placeholder is not interpolated in the message
-    with pytest.raises(TypeError, match=r'\{fmapid\}'):
-        _resolve({'to': '{fmapid}'}, base={}, scope=None, params={'fmapid': ['a', 'b']})
 
 
 def test_resolve_substitutes_a_scalar_param_into_a_scalar_placeholder():
@@ -752,6 +763,26 @@ def test_unbound_placeholder_in_a_later_alternative_raises(empty_root):
         collect_derivatives(empty_root, spec=spec, entities={'subject': '01'})
 
 
+def test_list_bound_to_a_later_alternative_raises_even_if_the_first_matches(deriv_root):
+    """A list bound to a scalar placeholder fails up front, before any query runs."""
+    spec = {
+        'images': Group(
+            queries={
+                'preproc': Query(
+                    [
+                        {'suffix': 'T1w', 'desc': 'preproc'},
+                        {'suffix': 'T1w', 'desc': '{desc}'},
+                    ]
+                )
+            }
+        )
+    }
+    with pytest.raises(TypeError, match=r"preproc \(alternative 1\).*'desc'"):
+        collect_derivatives(
+            deriv_root, spec=spec, entities={'subject': '01'}, params={'desc': ['a', 'b']}
+        )
+
+
 def test_unbound_placeholder_raises_without_iterations(empty_root):
     spec = {
         'fieldmaps': Group(
@@ -764,6 +795,41 @@ def test_unbound_placeholder_raises_without_iterations(empty_root):
     with pytest.raises(TypeError, match='level'):
         collect_derivatives(
             empty_root, spec=spec, entities={'subject': '01'}, params={'fmapid': None}
+        )
+
+
+def test_list_bound_placeholder_raises_even_with_zero_iterations(empty_root):
+    """A list bound to a scalar placeholder fails up front, even in a group that never runs."""
+    spec = {
+        'fieldmaps': Group(
+            per='fmapid',
+            queries={
+                'coeffs': Query([{'fmapid': '{fmapid}', 'desc': '{level}', 'suffix': 'fieldmap'}])
+            },
+        )
+    }
+    with pytest.raises(TypeError, match=r"coeffs \(alternative 0\).*'level'"):
+        collect_derivatives(
+            empty_root,
+            spec=spec,
+            entities={'subject': '01'},
+            params={'fmapid': None, 'level': ['a', 'b']},
+        )
+
+
+def test_list_bound_to_a_per_iteration_member_raises(deriv_root):
+    """A list or tuple member of ``params[per]`` is itself a scalar binding."""
+    spec = {
+        'transforms': Group(
+            per='space',
+            queries={
+                'forward': Query([{'from': 'anat', 'to': 'MNI152NLin2009cAsym', 'suffix': 'xfm'}])
+            },
+        )
+    }
+    with pytest.raises(TypeError, match="'transforms'"):
+        collect_derivatives(
+            deriv_root, spec=spec, entities={'subject': '01'}, params={'space': [['a', 'b']]}
         )
 
 
