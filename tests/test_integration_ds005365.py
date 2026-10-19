@@ -120,8 +120,12 @@ def test_demo_reproduces_checksum() -> None:
     coeff_file = fmaps[fmapid]['coeffs']
     fmapref_file = fmaps[fmapid]['magnitude']
 
+    MNI_full = nb.load(MNI_file)
+    # If the target data/metadata doesn't match, we can't validate the final result
+    assert sha256(MNI_full.to_bytes()).hexdigest()[:8] == '5769f4e8'
+
     bold, pe_info = prepare_epi(nb.load(bold_file), bold_file.get_metadata())
-    MNI = nli.crop_img(MNI_file, copy_header=True)
+    MNI = nli.crop_img(MNI_full, copy_header=True)
     fmapref = nb.load(fmapref_file)
     coeff = nb.load(coeff_file)
 
