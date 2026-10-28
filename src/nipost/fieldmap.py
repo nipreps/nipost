@@ -86,17 +86,21 @@ def grid_bspline_weights(target_nii: SpatialImage, ctrl_nii: SpatialImage, dtype
         # Size of locations is L
         locs = nb.affines.apply_affine(target_to_grid, coords.T)[:, axis]
 
-        # Size of knots is K + 6 so that all locations are fully covered by basis
-        knots = np.arange(-3, knots_shape[axis] + 3, dtype=dtype)
+        # Size of knots is K + 10, so that the spline's base interval -- the middle
+        # of the knot vector, [knots[3], knots[-4]] -- spans -2..K+1 and thus covers
+        # the whole compact support of the K basis functions centred on 0..K-1.
+        knots = np.arange(-5, knots_shape[axis] + 5, dtype=dtype)
 
-        bspl = BSpline(knots, np.eye(len(knots) - 3 - 1), 3)
+        # We are calculating weights exactly; extrapolation would do the wrong thing
+        # and we'd rather see NaNs if we get this wrong.
+        bspl = BSpline(knots, np.eye(len(knots) - 3 - 1), 3, extrapolate=False)
 
         # Construct a sparse design matrix (L, K)
-        distance = np.abs(locs[..., np.newaxis] - knots[np.newaxis, 3:-3])
+        distance = np.abs(locs[..., np.newaxis] - knots[np.newaxis, 5:-5])
         within_support = distance < 2.0
 
         colloc_ax = lil_array(distance.shape, dtype=dtype)
-        colloc_ax[within_support] = bspl(locs)[:, 1:-1][within_support]
+        colloc_ax[within_support] = bspl(locs)[:, 3:-3][within_support]
 
         # Convert to CSR for efficient multiplication
         wd.append(colloc_ax.tocsr())
