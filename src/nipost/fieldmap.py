@@ -203,8 +203,9 @@ def reconstruct_fieldmap(
 
     If the coefficients and target are aligned, the field is reconstructed
     directly in the target space.
-    If not, then the field is reconstructed to the ``fmap_reference``
-    resolution, and then resampled according to transforms.
+    If not, then the field is reconstructed at the ``fmap_reference``
+    resolution over a grid covering the target's bounding box, and then
+    resampled according to transforms.
 
     The former method only applies if the transform chain can be
     collapsed to a single affine transform.
@@ -215,8 +216,9 @@ def reconstruct_fieldmap(
         list of B-spline coefficient files. The affine matrices are used
         to reconstruct the knot locations.
     fmap_reference
-        The intermediate reference to reconstruct the fieldmap in, if
-        it cannot be reconstructed directly in the target space.
+        Donates the resolution and orientation of the intermediate grid, if the
+        fieldmap cannot be reconstructed directly in the target space. Its
+        field-of-view does not bound the result; see :func:`target_bbox_grid`.
     target
         The target space to to resample the fieldmap into.
     transforms
@@ -257,7 +259,10 @@ def reconstruct_fieldmap(
             fmap_reference = nb.as_closest_canonical(fmap_reference)
         if not aligned(fmap_reference.affine, coefficients[-1].affine):
             raise ValueError('Reference passed is not aligned with spline grids')
-        reference, _ = ensure_positive_cosines(fmap_reference)
+        oriented, _ = ensure_positive_cosines(fmap_reference)
+        # Reconstruct over the target's extent, not the fieldmap's, whose
+        # field-of-view is often the smaller of the two.
+        reference = target_bbox_grid(oriented, target, transforms)
 
     # Generate tensor-product B-Spline weights
     colmat = sparse_hstack(
