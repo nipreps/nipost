@@ -12,6 +12,9 @@ from scipy.sparse import kron, lil_array
 
 from nipost.epi import ensure_positive_cosines
 
+# Tolerance, in voxels, for snapping a bounding box bound to a voxel center
+SNAP_TOL = 1e-3
+
 
 def grid_bspline_weights(target_nii: SpatialImage, ctrl_nii: SpatialImage, dtype='float32'):
     r"""
@@ -132,6 +135,64 @@ def as_affine(xfm: nt.base.TransformBase) -> nt.Affine | None:
     return None
 
 
+def target_bbox_grid(
+    fmap_reference: SpatialImage,
+    target: SpatialImage,
+    transforms: nt.base.TransformBase,
+    margin: int = 4,
+) -> nb.Nifti1Image:
+    """Build a grid covering the target's bounding box, aligned with the fieldmap.
+
+    Keeps ``fmap_reference``'s resolution and direction cosines, so the grid stays
+    aligned with the coefficient grids, and takes its origin and shape from
+    ``target`` mapped through ``transforms``.
+
+    Assumes a homeomorphic transform and only maps faces, for efficiency.
+
+    Parameters
+    ----------
+    fmap_reference
+        Donates the grid's resolution and orientation.
+    target
+        The space whose extent the grid must cover.
+    transforms
+        Maps coordinates in the target space into the fieldmap space.
+    margin
+        Voxels to leave on every side, keeping the resampling prefilter's boundary
+        conditions away from the target's samples.
+
+    Returns
+    -------
+    grid
+        A zero-filled image; only its shape and affine are meaningful.
+
+    Examples
+    --------
+    A target five 2mm voxels across, with two voxels of margin either side:
+
+    >>> ref = nb.Nifti1Image(np.zeros((11, 11, 11)), np.diag([2.0, 2.0, 2.0, 1.0]))
+    >>> target = nb.Nifti1Image(np.zeros((5, 5, 5)), np.diag([2.0, 2.0, 2.0, 1.0]))
+    >>> target_bbox_grid(ref, target, nt.Affine(), margin=2).shape
+    (9, 9, 9)
+    """
+    # Get the edge voxels of the target
+    mask = np.ones(target.shape[:3], dtype=bool)
+    mask[1:-1, 1:-1, 1:-1] = False
+
+    vox2vox = nt.TransformChain(
+        [nt.Affine(target.affine), transforms, ~nt.Affine(fmap_reference.affine)]
+    )
+    ijk = vox2vox.map(np.argwhere(mask))
+
+    # Round outwards, snapping near-integer bounds: a co-aligned target lands on exact
+    # indices, where numerical noise would otherwise flip floor/ceil by a whole voxel.
+    start = np.floor(ijk.min(axis=0) + SNAP_TOL).astype(int) - margin
+    end = np.ceil(ijk.max(axis=0) - SNAP_TOL).astype(int) + margin
+
+    affine = fmap_reference.affine @ nb.affines.from_matvec(np.eye(3), start)
+    return nb.Nifti1Image(np.zeros(end - start + 1, dtype='u1'), affine)
+
+
 def reconstruct_fieldmap(
     coefficients: list[SpatialImage],
     fmap_reference: SpatialImage,
@@ -142,8 +203,9 @@ def reconstruct_fieldmap(
 
     If the coefficients and target are aligned, the field is reconstructed
     directly in the target space.
-    If not, then the field is reconstructed to the ``fmap_reference``
-    resolution, and then resampled according to transforms.
+    If not, then the field is reconstructed at the ``fmap_reference``
+    resolution over a grid covering the target's bounding box, and then
+    resampled according to transforms.
 
     The former method only applies if the transform chain can be
     collapsed to a single affine transform.
@@ -154,8 +216,9 @@ def reconstruct_fieldmap(
         list of B-spline coefficient files. The affine matrices are used
         to reconstruct the knot locations.
     fmap_reference
-        The intermediate reference to reconstruct the fieldmap in, if
-        it cannot be reconstructed directly in the target space.
+        Donates the resolution and orientation of the intermediate grid, if the
+        fieldmap cannot be reconstructed directly in the target space. Its
+        field-of-view does not bound the result; see :func:`target_bbox_grid`.
     target
         The target space to to resample the fieldmap into.
     transforms
@@ -196,7 +259,10 @@ def reconstruct_fieldmap(
             fmap_reference = nb.as_closest_canonical(fmap_reference)
         if not aligned(fmap_reference.affine, coefficients[-1].affine):
             raise ValueError('Reference passed is not aligned with spline grids')
-        reference, _ = ensure_positive_cosines(fmap_reference)
+        oriented, _ = ensure_positive_cosines(fmap_reference)
+        # Reconstruct over the target's extent, not the fieldmap's, whose
+        # field-of-view is often the smaller of the two.
+        reference = target_bbox_grid(oriented, target, transforms)
 
     # Generate tensor-product B-Spline weights
     colmat = sparse_hstack(

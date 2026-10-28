@@ -2,11 +2,15 @@
 
 This test transcribes ``repos/fmriprep-resampling-demo/resample.ipynb`` using
 only nipost (plus templateflow, nibabel, nilearn).  It asserts the byte-exact
-checksum ``e4a5dede``.
+checksum ``29a8694c``.
 
-Note that this checksum differs from the one in the notebook because the notebook used
-an old version of nilearn that defaulted to copy_header=False.
-Rather than preserve that behavior, we update to copy_header=True, and update the checksum.
+Two deliberate departures from the notebook's own checksum:
+
+- The notebook used an old version of nilearn that defaulted to
+  ``copy_header=False``. Rather than preserve that behavior, we update to
+  ``copy_header=True``, and update the checksum.
+- ``reconstruct_fieldmap`` reconstructs over the target's bounding box rather
+  than the fieldmap reference's field-of-view. See the test's docstring.
 """
 
 from __future__ import annotations
@@ -52,7 +56,16 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_demo_reproduces_checksum() -> None:
-    """Reproduce the fmriprep-resampling-demo checksum using only nipost."""
+    """Lock the end-to-end resampling output, using only nipost.
+
+    These checksums started as the fmriprep-resampling-demo's, and matched it until
+    reconstruct_fieldmap() moved to reconstructing over the target's bounding box.
+    The demo, like fMRIPrep and SDCFlows, reconstructs over the fieldmap reference
+    and resamples afterwards, which leaves any target voxel outside the fieldmap's
+    field-of-view at 0 Hz -- 3.5% of this MNI target, holding up to 202 Hz of real
+    off-resonance. Parity with the demo would mean reproducing that, so the
+    checksums below are nipost's own.
+    """
     from bids import BIDSLayout
     from nibabel.spatialimages import SpatialImage
     from nilearn import image as nli
@@ -152,7 +165,7 @@ def test_demo_reproduces_checksum() -> None:
     )
 
     # Data and affine are the important bits
-    assert sha256(np.asanyarray(bold_mni.dataobj).tobytes()).hexdigest()[:8] == '2655c92a'
+    assert sha256(np.asanyarray(bold_mni.dataobj).tobytes()).hexdigest()[:8] == '7355a356'
     assert sha256(bold_mni.affine.tobytes()).hexdigest()[:8] == 'c532bd33'
     # The full serialization (with header) is worth checking too
-    assert sha256(bold_mni.to_bytes()).hexdigest()[:8] == 'e4a5dede'
+    assert sha256(bold_mni.to_bytes()).hexdigest()[:8] == '29a8694c'
