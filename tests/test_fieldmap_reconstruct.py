@@ -52,6 +52,18 @@ def ones_coefficients():
     return [nb.Nifti1Image(np.ones((21, 21, 21), dtype='f4'), affine)]
 
 
+def ramp_coefficients():
+    """Coefficients set to each knot's RAS x coordinate, over the same grid.
+
+    Cubic B-splines reproduce cubics, so the field is exactly ``f(x, y, z) = x``.
+    A constant field would be blind to boundary error, which reproduces it exactly.
+    """
+    affine = np.diag([4.0, 4.0, 4.0, 1.0])
+    affine[:3, 3] = -40.0
+    knots = nb.Nifti1Image(np.zeros((21, 21, 21), dtype='f4'), affine)
+    return [nb.Nifti1Image(ras_x(knots).astype('f4'), affine)]
+
+
 def ras_x(img):
     """The RAS x coordinate of every voxel of an image."""
     ijk = np.indices(img.shape[:3], dtype=float).reshape(3, -1).T
@@ -116,6 +128,25 @@ def test_reconstruct_fieldmap_is_zero_past_the_coefficient_support():
     assert_allclose(data[outside], 0.0, atol=1e-6)
 
 
+def test_reconstruct_fieldmap_target_edges_survive_interpolation():
+    # The margin past the bounding box keeps nt.resampling.apply's boundary extension
+    # away from the target's samples. The bounding box alone already guarantees no
+    # sample falls outside the intermediate grid, so cval never applies; what the
+    # margin buys is distance from the spline prefilter's boundary conditions, whose
+    # error is signal-dependent and decays inwards. Shift the target half a voxel off
+    # the fieldmap grid so resampling interpolates rather than copies.
+    target = grid(span=20.0, shift=1.0)
+
+    field = reconstruct_fieldmap(
+        coefficients=ramp_coefficients(),
+        fmap_reference=grid(span=10.0),
+        target=target,
+        transforms=identity_warp(),
+    )
+
+    assert_allclose(np.asanyarray(field.dataobj), ras_x(target), atol=0.05)
+
+
 @pytest.mark.parametrize(
     ('description', 'target'),
     [
@@ -163,6 +194,29 @@ def test_reconstruct_fieldmap_rejects_reference_misaligned_with_coefficients():
             target=grid(span=20.0),
             transforms=identity_warp(),
         )
+
+
+def test_reconstruct_fieldmap_canonicalizes_permuted_reference():
+    # Coefficients are RAS; a reference whose voxel axes are permuted is reoriented to
+    # match before its orientation is handed to the intermediate grid. A permutation is
+    # what the reorientation is actually for -- a mere axis flip reads as aligned, since
+    # antiparallel columns have a zero cross product, and ensure_positive_cosines()
+    # would settle it regardless.
+    affine = np.zeros((4, 4))
+    affine[[0, 1, 2], [2, 0, 1]] = 2.0
+    affine[:3, 3] = -10.0
+    affine[3, 3] = 1.0
+    fmap_reference = nb.Nifti1Image(np.zeros((11, 11, 11), dtype='f4'), affine)
+    assert nb.aff2axcodes(affine) == ('A', 'S', 'R')
+
+    field = reconstruct_fieldmap(
+        coefficients=ones_coefficients(),
+        fmap_reference=fmap_reference,
+        target=grid(span=20.0),
+        transforms=identity_warp(),
+    )
+
+    assert_allclose(np.asanyarray(field.dataobj), 1.0, atol=1e-4)
 
 
 def test_target_bbox_grid_follows_the_transform_into_fieldmap_space():
