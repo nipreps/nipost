@@ -12,6 +12,9 @@ from scipy.sparse import kron, lil_array
 
 from nipost.epi import ensure_positive_cosines
 
+# Tolerance, in voxels, for snapping a bounding box bound to a voxel center
+SNAP_TOL = 1e-3
+
 
 def grid_bspline_weights(target_nii: SpatialImage, ctrl_nii: SpatialImage, dtype='float32'):
     r"""
@@ -130,6 +133,64 @@ def as_affine(xfm: nt.base.TransformBase) -> nt.Affine | None:
         return xfm.asaffine()
 
     return None
+
+
+def target_bbox_grid(
+    fmap_reference: SpatialImage,
+    target: SpatialImage,
+    transforms: nt.base.TransformBase,
+    margin: int = 4,
+) -> nb.Nifti1Image:
+    """Build a grid covering the target's bounding box, aligned with the fieldmap.
+
+    Keeps ``fmap_reference``'s resolution and direction cosines, so the grid stays
+    aligned with the coefficient grids, and takes its origin and shape from
+    ``target`` mapped through ``transforms``.
+
+    Assumes a homeomorphic transform and only maps faces, for efficiency.
+
+    Parameters
+    ----------
+    fmap_reference
+        Donates the grid's resolution and orientation.
+    target
+        The space whose extent the grid must cover.
+    transforms
+        Maps coordinates in the target space into the fieldmap space.
+    margin
+        Voxels to leave on every side, keeping the resampling prefilter's boundary
+        conditions away from the target's samples.
+
+    Returns
+    -------
+    grid
+        A zero-filled image; only its shape and affine are meaningful.
+
+    Examples
+    --------
+    A target five 2mm voxels across, with two voxels of margin either side:
+
+    >>> ref = nb.Nifti1Image(np.zeros((11, 11, 11)), np.diag([2.0, 2.0, 2.0, 1.0]))
+    >>> target = nb.Nifti1Image(np.zeros((5, 5, 5)), np.diag([2.0, 2.0, 2.0, 1.0]))
+    >>> target_bbox_grid(ref, target, nt.Affine(), margin=2).shape
+    (9, 9, 9)
+    """
+    # Get the edge voxels of the target
+    mask = np.ones(target.shape[:3], dtype=bool)
+    mask[1:-1, 1:-1, 1:-1] = False
+
+    vox2vox = nt.TransformChain(
+        [nt.Affine(target.affine), transforms, ~nt.Affine(fmap_reference.affine)]
+    )
+    ijk = vox2vox.map(np.argwhere(mask))
+
+    # Round outwards, snapping near-integer bounds: a co-aligned target lands on exact
+    # indices, where numerical noise would otherwise flip floor/ceil by a whole voxel.
+    start = np.floor(ijk.min(axis=0) + SNAP_TOL).astype(int) - margin
+    end = np.ceil(ijk.max(axis=0) - SNAP_TOL).astype(int) + margin
+
+    affine = fmap_reference.affine @ nb.affines.from_matvec(np.eye(3), start)
+    return nb.Nifti1Image(np.zeros(end - start + 1, dtype='u1'), affine)
 
 
 def reconstruct_fieldmap(
