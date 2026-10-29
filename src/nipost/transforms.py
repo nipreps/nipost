@@ -32,3 +32,15 @@ def load_transforms(xfm_paths: list[Path], inverse: list[bool]) -> nt.base.Trans
     if chain is None:
         chain = nt.Affine()  # Identity
     return chain
+
+
+def collapse_transforms(xfm: nt.base.TransformBase) -> nt.base.TransformBase:
+    """Reduce a transform to the fewest transforms that map points the same way
+
+    Nested chains are flattened, identities dropped, and each run of consecutive
+    affines merged into one, so a chain of affines becomes a single Affine, and
+    a warp between affines becomes an ``[Affine, warp, Affine]`` chain.
+    Per-volume affines (``LinearTransformsMapping``) are left as they are.
+    The first transform keeps the reference space of the original.
+    """
+    raise NotImplementedError
