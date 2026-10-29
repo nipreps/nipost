@@ -133,8 +133,6 @@ def reconstruct_fieldmap(
         :math:`v` the ``pe_vector``, unclipped, on the grid of ``target``.
         It is 1 beyond the support of the coefficients.
     """
-    if pe_vector is not None:
-        raise NotImplementedError
     shape = target.shape[:3]
     ijk = np.indices(shape).reshape(3, -1).T
     # Map through any warp once; each level then needs only a float64 affine
@@ -143,11 +141,20 @@ def reconstruct_fieldmap(
     ).map(ijk)
 
     field = np.zeros(len(ijk))
+    jac = np.ones(len(ijk))
     for level in coefficients:
         lattice = nb.affines.apply_affine(np.linalg.inv(level.affine), fmap_xyz)
         # The field is exactly 0 from two knots outside the lattice
         inside = ((lattice > -2) & (lattice < np.array(level.shape[:3]) + 1)).all(axis=1)
-        field[inside] += _level_spline(level)(lattice[inside])
+        points = lattice[inside]
+        spline = _level_spline(level)
+        field[inside] += spline(points)
+        if pe_vector is not None:
+            # Directional derivative: v in lattice units, then the lattice-axis derivatives
+            u = np.linalg.inv(level.affine)[:3, :3] @ pe_vector
+            for axis in range(3):
+                nu = tuple(int(a == axis) for a in range(3))
+                jac[inside] += u[axis] * spline(points, nu=nu)
     field = field.reshape(shape)
 
     fmap_img = nb.Nifti1Image(field.astype('float32'), target.affine)
@@ -156,4 +163,9 @@ def reconstruct_fieldmap(
     fmap_img.header['cal_max'] = max_abs
     fmap_img.header['cal_min'] = -max_abs
 
-    return fmap_img
+    jac_img = None
+    if pe_vector is not None:
+        jac_img = nb.Nifti1Image(jac.reshape(shape).astype('float32'), target.affine)
+        jac_img.header.set_intent('estimate', name='jacobian')
+
+    return fmap_img, jac_img
