@@ -1,5 +1,7 @@
 """Fieldmap reconstruction (ported from fMRIPrep + SDCFlows)."""
 
+from typing import overload
+
 import nibabel as nb
 import nitransforms as nt
 import numpy as np
@@ -73,12 +75,30 @@ def _level_spline(level: SpatialImage) -> NdBSpline:
     return NdBSpline(knots, coeffs, 3)
 
 
+@overload
 def reconstruct_fieldmap(
     coefficients: list[SpatialImage],
     target: SpatialImage,
     transforms: nt.base.TransformBase,
-) -> nb.Nifti1Image:
-    """Evaluate a B-Spline fieldmap at the voxels of a target space
+    *,
+    pe_vector: None = None,
+) -> tuple[nb.Nifti1Image, None]: ...
+@overload
+def reconstruct_fieldmap(
+    coefficients: list[SpatialImage],
+    target: SpatialImage,
+    transforms: nt.base.TransformBase,
+    *,
+    pe_vector: np.ndarray,
+) -> tuple[nb.Nifti1Image, nb.Nifti1Image]: ...
+def reconstruct_fieldmap(
+    coefficients: list[SpatialImage],
+    target: SpatialImage,
+    transforms: nt.base.TransformBase,
+    *,
+    pe_vector: np.ndarray | None = None,
+) -> tuple[nb.Nifti1Image, nb.Nifti1Image | None]:
+    r"""Evaluate a B-Spline fieldmap at the voxels of a target space
 
     Each coefficient level is a cubic B-Spline over its own lattice. The levels
     are evaluated exactly at the center of every target voxel, and summed.
@@ -99,6 +119,8 @@ def reconstruct_fieldmap(
         A nitransforms transform that maps points in the target space
         into the fieldmap space, i.e., the one that resamples fieldmap images
         into the target space.
+    pe_vector
+        A vector from :func:`pe_vector`. If given, the Jacobian is also returned.
 
     Returns
     -------
@@ -106,7 +128,13 @@ def reconstruct_fieldmap(
         The fieldmap encoded in ``coefficients``, in Hz, with the shape
         (first three axes) and affine of ``target``. It is 0 beyond the support
         of the coefficients.
+    jacobian
+        Only if ``pe_vector`` is given: :math:`J = 1 + \nabla\phi \cdot v`, with
+        :math:`v` the ``pe_vector``, unclipped, on the grid of ``target``.
+        It is 1 beyond the support of the coefficients.
     """
+    if pe_vector is not None:
+        raise NotImplementedError
     shape = target.shape[:3]
     ijk = np.indices(shape).reshape(3, -1).T
     # Map through any warp once; each level then needs only a float64 affine
