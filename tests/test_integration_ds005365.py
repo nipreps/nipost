@@ -1,16 +1,17 @@
 """End-to-end test.
 
 This test transcribes ``repos/fmriprep-resampling-demo/resample.ipynb`` using
-only nipost (plus templateflow, nibabel, nilearn).  It asserts the byte-exact
-checksum ``29a8694c``.
+only nipost (plus templateflow, nibabel, nilearn).  It asserts byte-exact
+checksums, which are nipost's own.
 
 Two deliberate departures from the notebook's own checksum:
 
 - The notebook used an old version of nilearn that defaulted to
   ``copy_header=False``. Rather than preserve that behavior, we update to
   ``copy_header=True``, and update the checksum.
-- ``reconstruct_fieldmap`` reconstructs over the target's bounding box rather
-  than the fieldmap reference's field-of-view. See the test's docstring.
+- ``reconstruct_fieldmap`` evaluates the splines at each target voxel, rather
+  than reconstructing over the fieldmap reference and resampling. See the
+  test's docstring.
 """
 
 from __future__ import annotations
@@ -59,11 +60,12 @@ def test_demo_reproduces_checksum() -> None:
     """Lock the end-to-end resampling output, using only nipost.
 
     These checksums started as the fmriprep-resampling-demo's, and matched it until
-    reconstruct_fieldmap() moved to reconstructing over the target's bounding box.
+    reconstruct_fieldmap() stopped reconstructing over the fieldmap reference's
+    field-of-view (first by reconstructing over the target's bounding box, now by
+    evaluating the splines at each target voxel).
     The demo, like fMRIPrep and SDCFlows, reconstructs over the fieldmap reference
     and resamples afterwards, which leaves any target voxel outside the fieldmap's
-    field-of-view at 0 Hz -- 3.5% of this MNI target, holding up to 202 Hz of real
-    off-resonance. Parity with the demo would mean reproducing that, so the
+    field-of-view at 0 Hz. Parity with the demo would mean reproducing that, so the
     checksums below are nipost's own.
     """
     from bids import BIDSLayout
@@ -139,8 +141,6 @@ def test_demo_reproduces_checksum() -> None:
     fmap2std_inv = [True, *[False] * (len(run2anat_xfms) + 1)]
 
     coeff_files = fmaps['fieldmaps'][fmapid]['coeffs']
-    fmapref_file = fmaps['fieldmaps'][fmapid]['magnitude']
-    assert isinstance(fmapref_file, str)
 
     MNI_full = load_api(MNI_file, SpatialImage)
     # If the target data/metadata doesn't match, we can't validate the final result
@@ -148,7 +148,6 @@ def test_demo_reproduces_checksum() -> None:
 
     bold, pe_info = prepare_epi(load_api(bold_file, SpatialImage), bold_file.get_metadata())
     MNI = nli.crop_img(MNI_full, copy_header=True)
-    fmapref = load_api(fmapref_file, SpatialImage)
     coeffs = [load_api(path, SpatialImage) for path in coeff_files]
 
     bold2std = load_transforms(
@@ -156,7 +155,7 @@ def test_demo_reproduces_checksum() -> None:
     )  # single-element inverse list broadcasts to all transforms in the chain
     fmap2std = load_transforms(fmap2std_xfms, inverse=fmap2std_inv)
 
-    fmap_std = reconstruct_fieldmap(coeffs, fmapref, MNI, fmap2std)
+    fmap_std = reconstruct_fieldmap(coeffs, MNI, fmap2std)
 
     bold_mni = resample_image(
         source=bold,
@@ -169,7 +168,7 @@ def test_demo_reproduces_checksum() -> None:
     )
 
     # Data and affine are the important bits
-    assert sha256(np.asanyarray(bold_mni.dataobj).tobytes()).hexdigest()[:8] == '7355a356'
+    assert sha256(np.asanyarray(bold_mni.dataobj).tobytes()).hexdigest()[:8] == '1cd0d5e0'
     assert sha256(bold_mni.affine.tobytes()).hexdigest()[:8] == 'c532bd33'
     # The full serialization (with header) is worth checking too
-    assert sha256(bold_mni.to_bytes()).hexdigest()[:8] == '29a8694c'
+    assert sha256(bold_mni.to_bytes()).hexdigest()[:8] == 'd7bc7be1'
