@@ -24,7 +24,13 @@ pip install 'nipost[bids]'
 
 ```python
 import nibabel as nb
-from nipost import load_transforms, reconstruct_fieldmap, resample_image
+from nipost import (
+    load_transforms,
+    pe_vector,
+    prepare_epi,
+    reconstruct_fieldmap,
+    resample_image,
+)
 from nipost.bids import collect_derivatives, collect_fieldmaps
 from nipost.bids.spec import load_spec
 
@@ -42,6 +48,9 @@ anat = collect_derivatives(
     entities={'subject': subject},
     params={'space': ['MNI152NLin2009cAsym']},
 )
+
+# The run's EPI image, reoriented, with its phase-encoding info
+bold, pe_info = prepare_epi(nb.load(bold_file), bold_metadata)
 
 # 2. Build transform chains (HMC → boldref→anat → anat→std)
 transforms = func['transforms']
@@ -66,8 +75,9 @@ run2std = load_transforms(
 )
 
 # 3. Reconstruct the fieldmap (B-Spline coefficients → Hz image in target space)
+# and its Jacobian (intensity modulation from the distortion)
 # The run's fieldmap is the ID whose entry found a transform; none means SDC was skipped
-fmap_std = None
+fmap_std = jac_std = None
 fmapid, fmap_xfms = next(
     ((k, v) for k, v in func['fmap_transforms'].items() if v), (None, None)
 )
@@ -76,9 +86,14 @@ if fmapid is not None:
         [fmap_xfms['run2fmap'], *run2anat_xfms, anat2std_xfm],
         inverse=[True, *[False] * (len(run2anat_xfms) + 1)],
     )
+    # PE axis of the bold image from prepare_epi(), in fieldmap space
+    run2fmap = load_transforms([fmap_xfms['run2fmap']], inverse=[True])
+    pe_vec = pe_vector(bold, pe_info, run2fmap)
     # 'coeffs' is a list: one entry per B-Spline level.
     coeffs = [nb.load(path) for path in fmaps['fieldmaps'][fmapid]['coeffs']]
-    fmap_std = reconstruct_fieldmap(coeffs, target, fmap2std)
+    fmap_std, jac_std = reconstruct_fieldmap(
+        coeffs, target, fmap2std, pe_vector=pe_vec
+    )
 
 # 4. Resample BOLD in one shot — HMC + SDC + normalization simultaneously
 bold_mni = resample_image(
@@ -87,6 +102,7 @@ bold_mni = resample_image(
     transforms=run2std,
     fieldmap=fmap_std,
     pe_info=pe_info,
+    jacobian=jac_std,
 )
 ```
 
@@ -98,6 +114,7 @@ bold_mni = resample_image(
 | -------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `nipost.resample_image`          | Resample a 3-/4-D BOLD image into a target space, applying HMC + SDC in one interpolation pass. |
 | `nipost.reconstruct_fieldmap`    | Evaluate B-Spline fieldmap coefficients at the voxels of a target space.                        |
+| `nipost.pe_vector`               | Phase-encoding direction in fieldmap space, as needed for the Jacobian.                         |
 | `nipost.load_transforms`         | Load a series of transform files and compose them into a `nitransforms` chain.                  |
 | `nipost.get_trt`                 | Derive the total readout time from BIDS sidecar metadata.                                       |
 | `nipost.ensure_positive_cosines` | Reorient an image so all direction cosines are positive (normalises PE axis bookkeeping).       |
