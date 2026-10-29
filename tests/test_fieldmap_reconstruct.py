@@ -1,254 +1,196 @@
 # tests/test_fieldmap_reconstruct.py
-from itertools import product
-
 import nibabel as nb
 import nitransforms as nt
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from nipost.fieldmap import aligned, as_affine, reconstruct_fieldmap, target_bbox_grid
+from nipost.fieldmap import as_affine, reconstruct_fieldmap
 
 
-def test_aligned_true_for_same_orientation():
-    assert aligned(np.eye(4), np.diag([2.0, 2.0, 2.0, 1.0]))
+def test_as_affine_collapses_nested_chain():
+    chain = nt.TransformChain([nt.Affine(), nt.TransformChain([nt.Affine(), nt.Affine()])])
+    assert type(as_affine(chain)) is nt.Affine
 
 
-def test_aligned_false_for_rotated():
-    rot = np.eye(4)
-    rot[:3, :3] = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]])
-    assert not aligned(np.eye(4), rot)
+def test_as_affine_rejects_per_volume_affines():
+    hmc = nt.linear.LinearTransformsMapping([nt.Affine(), nt.Affine()])
+    assert as_affine(hmc) is None
 
 
-def test_as_affine_collapses_identity_chain():
-    # nt.TransformChain is in nt.manip; nt.base.TransformChain does not exist in 25.x
-    chain = nt.TransformChain([nt.Affine(), nt.Affine()])
-    assert isinstance(as_affine(chain), nt.Affine)
+def ras(img):
+    """The RAS coordinates of every voxel of an image, along a trailing axis."""
+    ijk = np.indices(img.shape[:3], dtype=float).reshape(3, -1).T
+    return nb.affines.apply_affine(img.affine, ijk).reshape(*img.shape[:3], 3)
 
 
-def test_reconstruct_fieldmap_direct_grid(tmp_path):
-    # target aligned with coefficient grid -> direct reconstruction path
-    target = nb.Nifti1Image(np.zeros((6, 6, 6), dtype='f4'), np.eye(4))
-    fmapref = nb.Nifti1Image(np.zeros((6, 6, 6), dtype='f4'), np.eye(4))
-    coeff = nb.Nifti1Image(np.ones((5, 5, 5), dtype='f4'), np.diag([2.0, 2.0, 2.0, 1.0]))
-
-    field = reconstruct_fieldmap(
-        coefficients=[coeff],
-        fmap_reference=fmapref,
-        target=target,
-        transforms=nt.TransformChain([nt.Affine()]),
-    )
-    assert field.shape == target.shape
-    assert np.isfinite(np.asanyarray(field.dataobj)).all()
+def grid(span, zoom=2.0, angle=0.0):
+    """An isotropic grid spanning -span..+span mm, rotated ``angle`` radians about k."""
+    cos, sin = np.cos(angle), np.sin(angle)
+    rotation = np.array([[cos, -sin, 0.0], [sin, cos, 0.0], [0.0, 0.0, 1.0]])
+    affine = nb.affines.from_matvec(rotation * zoom, rotation @ np.full(3, -span))
+    return nb.Nifti1Image(np.zeros((int(2 * span / zoom) + 1,) * 3, dtype='f4'), affine)
 
 
-# Cubic B-splines form a partition of unity, so all-ones coefficients reconstruct to
-# exactly 1.0 Hz over the coefficient grid's interior -- -36..+36mm for the 21 knots of
-# 4mm below. That contains every target here plus the intermediate grid built around it,
-# margin included, which is what makes 1.0 Hz a hand-derived expectation.
-def ones_coefficients():
-    affine = np.diag([4.0, 4.0, 4.0, 1.0])
-    affine[:3, 3] = -40.0
-    return [nb.Nifti1Image(np.ones((21, 21, 21), dtype='f4'), affine)]
+def las_grid():
+    """A 21x17x13 grid centered on 0 mm, with the first voxel axis running right to left."""
+    affine = nb.affines.from_matvec(np.diag([-2.0, 2.0, 2.0]), [20, -16, -12])
+    return nb.Nifti1Image(np.zeros((21, 17, 13), dtype='f4'), affine)
+
+
+def asr_grid():
+    """An 11-voxel grid whose voxel axes run anterior, superior and right."""
+    affine = nb.affines.from_matvec(np.eye(3)[[2, 0, 1]] * 2.0, -10)
+    assert nb.aff2axcodes(affine) == ('A', 'S', 'R')
+    return nb.Nifti1Image(np.zeros((11, 11, 11), dtype='f4'), affine)
+
+
+def series_grid():
+    """A grid spanning -20..+20 mm followed by a time axis, like a BOLD series."""
+    target = grid(span=20.0)
+    return nb.Nifti1Image(np.zeros((*target.shape, 3), dtype='f4'), target.affine)
 
 
 def ramp_coefficients():
-    """Coefficients set to each knot's RAS x coordinate, over the same grid.
+    """Coefficients set to each knot's RAS x coordinate, on 4 mm knots over -40..+40 mm.
 
-    Cubic B-splines reproduce cubics, so the field is exactly ``f(x, y, z) = x``.
-    A constant field would be blind to boundary error, which reproduces it exactly.
+    Cubic B-splines reproduce cubics, so the field is exactly ``f(x, y, z) = x`` within
+    -36..+36 mm. Unlike a constant, a ramp exposes flipped axes and boundary errors.
     """
-    affine = np.diag([4.0, 4.0, 4.0, 1.0])
-    affine[:3, 3] = -40.0
-    knots = nb.Nifti1Image(np.zeros((21, 21, 21), dtype='f4'), affine)
-    return [nb.Nifti1Image(ras_x(knots).astype('f4'), affine)]
+    knots = grid(span=40.0, zoom=4.0)
+    return [nb.Nifti1Image(ras(knots)[..., 0].astype('f4'), knots.affine)]
 
 
-def ras_x(img):
-    """The RAS x coordinate of every voxel of an image."""
-    ijk = np.indices(img.shape[:3], dtype=float).reshape(3, -1).T
-    return nb.affines.apply_affine(img.affine, ijk)[:, 0].reshape(img.shape[:3])
+def shift_warp(dx):
+    """A dense field displacing every point ``dx`` mm along x, which is not an Affine."""
+    affine = nb.affines.from_matvec(np.eye(3) * 4.0, -40)
+    deltas = np.zeros((21, 21, 21, 3), dtype='f4')
+    deltas[..., 0] = dx
+    return nt.DenseFieldTransform(nb.Nifti1Image(deltas, affine), is_deltas=True)
 
 
-def grid(span, shift=0.0, zoom=2.0):
-    """An isotropic grid spanning -span..+span mm, optionally shifted off the knots."""
-    affine = np.diag([zoom, zoom, zoom, 1.0])
-    affine[:3, 3] = -span + shift
-    return nb.Nifti1Image(np.zeros((int(2 * span / zoom) + 1,) * 3, dtype='f4'), affine)
-
-
-def identity_warp():
-    """A zero-displacement dense field: maps identity, but is not an Affine.
-
-    ``as_affine`` therefore returns None and the non-direct path is taken.
-    """
-    affine = np.diag([4.0, 4.0, 4.0, 1.0])
-    affine[:3, 3] = -40.0
-    field = nb.Nifti1Image(np.zeros((21, 21, 21, 3), dtype='f4'), affine)
-    return nt.TransformChain([nt.DenseFieldTransform(field, is_deltas=True)])
-
-
-def rotated_grid(span, angle, zoom=2.0):
-    """A grid spanning -span..+span mm, rotated ``angle`` radians about the k axis."""
-    cos, sin = np.cos(angle), np.sin(angle)
-    rotation = np.array([[cos, -sin, 0.0], [sin, cos, 0.0], [0.0, 0.0, 1.0]])
-    affine = np.eye(4)
-    affine[:3, :3] = rotation * zoom
-    affine[:3, 3] = rotation @ np.full(3, -span)
-    return nb.Nifti1Image(np.zeros((int(2 * span / zoom) + 1,) * 3, dtype='f4'), affine)
-
-
-def corners(img):
-    """The eight voxel-centre corners of an image, in RAS."""
-    ijk = np.array(list(product(*([0, n - 1] for n in img.shape[:3]))), dtype=float)
-    return nb.affines.apply_affine(img.affine, ijk)
-
-
-def test_reconstruct_fieldmap_is_zero_past_the_coefficient_support():
-    # All-ones coefficients creates a field with a max of 1Hz, falling off to 0Hz
-    # beyond two knot spacings past the outermost knot.
+def test_reconstruct_fieldmap_zero_outside_support():
+    # The field falls off to 0 Hz beyond 48 mm, two knot spacings past the outermost knot.
     target = grid(span=60.0)
 
-    field = reconstruct_fieldmap(
-        coefficients=ones_coefficients(),
-        fmap_reference=grid(span=10.0),
-        target=target,
-        # An identity transform avoids the reconstruct-then-resample path
-        transforms=nt.TransformChain([nt.Affine()]),
-    )
+    field = reconstruct_fieldmap(ramp_coefficients(), target, nt.Affine())
 
     data = np.asanyarray(field.dataobj)
-    assert data.min() >= -1e-6, f'field undershoots the coefficients: {data.min()}'
-    assert data.max() <= 1 + 1e-6, f'field overshoots the coefficients: {data.max()}'
-
-    ijk = np.indices(target.shape[:3], dtype=float).reshape(3, -1).T
-    ras = nb.affines.apply_affine(target.affine, ijk)
-    # 48mm is 2 knot spacings beyond the outermost knot of the 21 knots spanning -40..+40mm
-    outside = (np.abs(ras) > 48.0).any(axis=1).reshape(target.shape[:3])
-    assert_allclose(data[outside], 0.0, atol=1e-6)
+    coords = ras(target)
+    extent = np.abs(coords).max(axis=-1)
+    # Inside support, recover x coordinates exactly; outside support, fall to 0 Hz.
+    assert_allclose(data[extent <= 36.0], coords[extent <= 36.0, 0], atol=1e-4)
+    assert_allclose(data[extent > 48.0], 0.0, atol=1e-6)
 
 
-def test_reconstruct_fieldmap_target_edges_survive_interpolation():
-    # The margin past the bounding box keeps nt.resampling.apply's boundary extension
-    # away from the target's samples. The bounding box alone already guarantees no
-    # sample falls outside the intermediate grid, so cval never applies; what the
-    # margin buys is distance from the spline prefilter's boundary conditions, whose
-    # error is signal-dependent and decays inwards. Shift the target half a voxel off
-    # the fieldmap grid so resampling interpolates rather than copies.
-    target = grid(span=20.0, shift=1.0)
+def test_reconstruct_fieldmap_tapers_past_the_lattice():
+    # Past the outermost knots, at +/-40 mm, only those within two spacings contribute,
+    # with weights 1/6, 4/6 and 1/6: (36 + 4 * 40) / 6 at 40 mm, 40 / 6 at 44 mm.
+    affine = nb.affines.from_matvec(np.eye(3) * 4, [-48, 0, 0])
+    target = nb.Nifti1Image(np.zeros((25, 1, 1)), affine)  # x = -48..+48 mm, y = z = 0
+    taper = [196 / 6, 40 / 6, 0.0]
 
-    field = reconstruct_fieldmap(
-        coefficients=ramp_coefficients(),
-        fmap_reference=grid(span=10.0),
-        target=target,
-        transforms=identity_warp(),
-    )
+    field = reconstruct_fieldmap(ramp_coefficients(), target, nt.Affine())
 
-    assert_allclose(np.asanyarray(field.dataobj), ras_x(target), atol=0.05)
+    expected = np.r_[np.negative(taper[::-1]), np.arange(-36, 37, 4), taper]
+    assert_allclose(field.dataobj[:, 0, 0], expected, atol=1e-4)
 
 
 @pytest.mark.parametrize(
-    ('description', 'target'),
+    'target',
     [
-        ('aligned with the fieldmap grid', grid(span=20.0)),
-        ('shifted half a voxel', grid(span=20.0, shift=1.0)),
-        ('finer than the fieldmap grid', grid(span=20.0, zoom=1.0)),
-        ('rotated 45 degrees', rotated_grid(span=20.0, angle=np.pi / 4)),
+        pytest.param(grid(span=20.0), id='RAS'),
+        pytest.param(grid(span=20.0, zoom=1.0), id='finer than the knots'),
+        pytest.param(las_grid(), id='LAS, non-cubic'),
+        pytest.param(asr_grid(), id='axis-permuted (ASR)'),
+        pytest.param(grid(span=20.0, angle=np.pi / 6), id='rotated'),
+        pytest.param(series_grid(), id='4-D'),
     ],
 )
-def test_target_bbox_grid_reserves_margin_around_mapped_target(description, target):
-    fmap_reference = grid(span=10.0)
+def test_reconstruct_fieldmap_target_geometry(target):
+    field = reconstruct_fieldmap(ramp_coefficients(), target, nt.Affine())
 
-    bbox = target_bbox_grid(fmap_reference, target, identity_warp(), margin=4)
-
-    ijk = nb.affines.apply_affine(np.linalg.inv(bbox.affine), corners(target))
-    assert (ijk >= 4 - 1e-3).all(), f'target {description} is short of margin at the low edge'
-    upper = np.array(bbox.shape[:3]) - 5
-    assert (ijk <= upper + 1e-3).all(), f'target {description} is short of margin at the top'
+    assert field.shape == target.shape[:3]
+    assert_allclose(field.affine, target.affine)
+    # Target field-of-view is inside support, recover x coordinates exactly.
+    assert_allclose(field.dataobj, ras(target)[..., 0], atol=1e-4)
 
 
-def test_target_bbox_grid_keeps_fieldmap_reference_resolution_and_orientation():
-    fmap_reference = grid(span=10.0)
+def test_reconstruct_fieldmap_follows_affine_transform():
+    # transforms maps target points into the fieldmap, so target x reads the field at x + 6
+    target = grid(span=20.0)
+    translation = nb.affines.from_matvec(np.eye(3), [6.0, 0.0, 0.0])
 
-    bbox = target_bbox_grid(fmap_reference, grid(span=20.0), identity_warp(), margin=4)
+    field = reconstruct_fieldmap(ramp_coefficients(), target, nt.Affine(translation))
 
-    assert_allclose(bbox.affine[:3, :3], fmap_reference.affine[:3, :3])
-
-
-def test_target_bbox_grid_shrinks_for_target_inside_fmap_fov():
-    # A partial-FOV target must not drag in the whole fieldmap reference FOV: 5 target
-    # voxels plus a 4-voxel margin on each side is 13, not the reference's 21.
-    bbox = target_bbox_grid(grid(span=20.0), grid(span=4.0), identity_warp(), margin=4)
-
-    assert bbox.shape[:3] == (13, 13, 13)
+    assert_allclose(field.dataobj, ras(target)[..., 0] + 6.0, atol=1e-4)
 
 
-def test_reconstruct_fieldmap_rejects_reference_misaligned_with_coefficients():
-    # The intermediate grid inherits the reference's direction cosines, so a reference
-    # rotated relative to the coefficient grids would silently break the separable
-    # tensor product grid_bspline_weights() builds.
-    with pytest.raises(ValueError, match='not aligned with spline grids'):
-        reconstruct_fieldmap(
-            coefficients=ones_coefficients(),
-            fmap_reference=rotated_grid(span=10.0, angle=np.pi / 6),
-            target=grid(span=20.0),
-            transforms=identity_warp(),
-        )
+def test_reconstruct_fieldmap_follows_nonlinear_transform():
+    target = grid(span=20.0)
+
+    field = reconstruct_fieldmap(ramp_coefficients(), target, shift_warp(6.0))
+
+    # nitransforms' spline interpolation of the dense field rings in from its edges,
+    # displacing a constant 6 mm field by up to 1e-3 mm 20 mm in.
+    assert_allclose(field.dataobj, ras(target)[..., 0] + 6.0, atol=5e-3)
 
 
-def test_reconstruct_fieldmap_canonicalizes_permuted_reference():
-    # Coefficients are RAS; a reference whose voxel axes are permuted is reoriented to
-    # match before its orientation is handed to the intermediate grid. A permutation is
-    # what the reorientation is actually for -- a mere axis flip reads as aligned, since
-    # antiparallel columns have a zero cross product, and ensure_positive_cosines()
-    # would settle it regardless.
-    affine = np.zeros((4, 4))
-    affine[[0, 1, 2], [2, 0, 1]] = 2.0
-    affine[:3, 3] = -10.0
-    affine[3, 3] = 1.0
-    fmap_reference = nb.Nifti1Image(np.zeros((11, 11, 11), dtype='f4'), affine)
-    assert nb.aff2axcodes(affine) == ('A', 'S', 'R')
+def test_reconstruct_fieldmap_sums_levels():
+    affine = nb.affines.from_matvec(np.eye(3) * 8, -80)
+    coarse = nb.Nifti1Image(np.ones((21, 21, 21), dtype='f4'), affine)
+    levels = [*ramp_coefficients(), coarse]
+    target = grid(span=20.0)
 
-    field = reconstruct_fieldmap(
-        coefficients=ones_coefficients(),
-        fmap_reference=fmap_reference,
-        target=grid(span=20.0),
-        transforms=identity_warp(),
-    )
-
-    assert_allclose(np.asanyarray(field.dataobj), 1.0, atol=1e-4)
+    # The constant level reads the same on the ramp's lattice, but not the other way around.
+    # Testing both orders prevents a lattice swap (e.g., evaluating all levels on the first
+    # lattice) from hiding in our choice of order.
+    for ordered in (levels, levels[::-1]):
+        field = reconstruct_fieldmap(ordered, target, nt.Affine())
+        assert_allclose(field.dataobj, ras(target)[..., 0] + 1.0, atol=1e-4)
 
 
-def test_target_bbox_grid_follows_the_transform_into_fieldmap_space():
-    # nitransforms samples the moving image at transforms.map(target coordinates), so
-    # the grid has to follow the transform rather than oppose it. Every other test here
-    # uses a zero-displacement warp, which cannot tell the two directions apart.
-    shift = np.eye(4)
-    shift[0, 3] = 30.0
+def test_reconstruct_fieldmap_oblique_lattice():
+    # A lattice rotated relative to world; a transposed or un-inverted lattice mapping
+    # would pass every axis-aligned case above.
+    knots = grid(span=40.0, zoom=4.0, angle=np.pi / 6)
+    oblique = nb.Nifti1Image(ras(knots)[..., 0].astype('f4'), knots.affine)
+    target = grid(span=12.0)
 
-    bbox = target_bbox_grid(grid(span=10.0), grid(span=4.0), nt.Affine(shift), margin=2)
+    field = reconstruct_fieldmap([oblique], target, nt.Affine())
 
-    lo = nb.affines.apply_affine(bbox.affine, [0, 0, 0])
-    hi = nb.affines.apply_affine(bbox.affine, np.array(bbox.shape[:3]) - 1)
-    # The target spans -4..+4mm; shifted +30 and padded two 2mm voxels either side.
-    assert_allclose([lo[0], hi[0]], [22.0, 38.0])
+    assert_allclose(field.dataobj, ras(target)[..., 0], atol=1e-4)
 
 
-def test_target_bbox_grid_pads_an_anisotropic_reference_per_axis():
-    # The margin counts voxels, so an anisotropic reference pads a different number of
-    # millimetres per axis. The target's extents and its origin both differ per axis:
-    # equal origins would make the lower bound [0, 0, 0], which survives an axis
-    # permutation unchanged and so could not detect one.
-    reference = nb.Nifti1Image(np.zeros((5, 5, 5), dtype='f4'), np.diag([1.0, 2.0, 5.0, 1.0]))
-    target_affine = np.diag([10.0, 20.0, 40.0, 1.0])
-    target_affine[:3, 3] = [3.0, -7.0, 11.0]
-    target = nb.Nifti1Image(np.zeros((2, 2, 2), dtype='f4'), target_affine)
+def test_reconstruct_fieldmap_header():
+    target = grid(span=20.0)
 
-    bbox = target_bbox_grid(reference, target, nt.Affine(), margin=1)
+    field = reconstruct_fieldmap(ramp_coefficients(), target, nt.Affine())
 
-    assert_allclose(nb.affines.voxel_sizes(bbox.affine), [1.0, 2.0, 5.0])
-    assert_allclose(nb.affines.apply_affine(bbox.affine, [0, 0, 0]), [2.0, -10.0, 5.0])
-    assert_allclose(
-        nb.affines.apply_affine(bbox.affine, np.array(bbox.shape[:3]) - 1),
-        [14.0, 16.0, 60.0],
-    )
+    assert field.header.get_intent() == ('estimate', (), 'fieldmap Hz')
+    assert field.get_data_dtype() == np.float32
+    peak = np.abs(field.dataobj).max()
+    assert_allclose(field.header['cal_max'], peak, rtol=1e-6)
+    assert_allclose(field.header['cal_min'], -peak, rtol=1e-6)
+
+
+def test_reconstruct_fieldmap_non_cubic_lattice():
+    affine = nb.affines.from_matvec(np.eye(3) * 4.0, [-40.0, -32.0, -24.0])
+    knots = nb.Nifti1Image(np.zeros((21, 17, 13), dtype='f4'), affine)
+    lattice = nb.Nifti1Image(ras(knots)[..., 2].astype('f4'), affine)
+    target = grid(span=12.0)
+
+    field = reconstruct_fieldmap([lattice], target, nt.Affine())
+
+    assert_allclose(field.dataobj, ras(target)[..., 2], atol=1e-4)
+
+
+def test_reconstruct_fieldmap_singleton_axis():
+    (level,) = ramp_coefficients()
+    single = level.slicer[..., np.newaxis]
+    target = grid(span=20.0)
+
+    field = reconstruct_fieldmap([single], target, nt.Affine())
+
+    assert field.shape == target.shape
+    assert_allclose(field.dataobj, ras(target)[..., 0], atol=1e-4)

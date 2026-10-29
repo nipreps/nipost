@@ -54,9 +54,7 @@ def _lookup(
     or a single value in an ordered list) produce ValueErrors.
 
     Ordered lists are sorted by matching entity values.
-    Unordered lists are natural-sorted by path to ensure deterministic results,
-    and to support use-cases such as :func:`nipost.reconstruct_fieldmap` that depend
-    on position (``coefficients[-1]`` is the finest B-spline level).
+    Unordered lists are natural-sorted by path to ensure deterministic results.
     """
     found = []
     entities: dict = {}

@@ -78,8 +78,7 @@ if fmapid is not None:
     )
     # 'coeffs' is a list: one entry per B-Spline level.
     coeffs = [nb.load(path) for path in fmaps['fieldmaps'][fmapid]['coeffs']]
-    fmapref = nb.load(fmaps['fieldmaps'][fmapid]['magnitude'])
-    fmap_std = reconstruct_fieldmap(coeffs, fmapref, target, fmap2std)
+    fmap_std = reconstruct_fieldmap(coeffs, target, fmap2std)
 
 # 4. Resample BOLD in one shot — HMC + SDC + normalization simultaneously
 bold_mni = resample_image(
@@ -98,7 +97,7 @@ bold_mni = resample_image(
 | Symbol                           | Description                                                                                     |
 | -------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `nipost.resample_image`          | Resample a 3-/4-D BOLD image into a target space, applying HMC + SDC in one interpolation pass. |
-| `nipost.reconstruct_fieldmap`    | Evaluate B-Spline fieldmap coefficients and resample the result into a target space.            |
+| `nipost.reconstruct_fieldmap`    | Evaluate B-Spline fieldmap coefficients at the voxels of a target space.                        |
 | `nipost.load_transforms`         | Load a series of transform files and compose them into a `nitransforms` chain.                  |
 | `nipost.get_trt`                 | Derive the total readout time from BIDS sidecar metadata.                                       |
 | `nipost.ensure_positive_cosines` | Reorient an image so all direction cosines are positive (normalises PE axis bookkeeping).       |
