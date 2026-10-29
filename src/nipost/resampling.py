@@ -36,7 +36,7 @@ def resample_vol(
     data: np.ndarray,
     coordinates: np.ndarray,
     pe_info: tuple[int, float],
-    jacobian: bool,
+    jacobian: np.ndarray | None,
     hmc_xfm: np.ndarray | None,
     fmap_hz: np.ndarray,
     output: np.dtype | np.ndarray | None = None,
@@ -65,6 +65,10 @@ def resample_vol(
         ``(1, -0.04)`` becomes ``[0, -0.04, 0]``, which indicates that a
         +1 Hz deflection in the field shifts 0.04 voxels toward the start
         of the data array in the second dimension.
+    jacobian
+        Jacobian determinant of the susceptibility distortion, sampled in the
+        target space (at ``coordinates``); see :func:`reconstruct_fieldmap`.
+        If ``None``, no intensity modulation is applied.
     hmc_xfm
         Affine transformation accounting for head motion from the individual
         volume into the BOLD reference space. This affine must be in VOX2VOX
@@ -112,8 +116,8 @@ def resample_vol(
         prefilter=prefilter,
     )
 
-    if jacobian:
-        result *= 1 + np.gradient(vsm, axis=pe_info[0])
+    if jacobian is not None:
+        result *= jacobian
 
     return result
 
@@ -122,7 +126,7 @@ async def resample_series_async(
     data: np.ndarray,
     coordinates: np.ndarray,
     pe_info: list[tuple[int, float]],
-    jacobian: bool,
+    jacobian: np.ndarray | None,
     hmc_xfms: list[np.ndarray] | None,
     fmap_hz: np.ndarray,
     output_dtype: np.dtype | str | None = None,
@@ -152,6 +156,10 @@ async def resample_series_async(
         ``(1, -0.04)`` becomes ``[0, -0.04, 0]``, which indicates that a
         +1 Hz deflection in the field shifts 0.04 voxels toward the start
         of the data array in the second dimension.
+    jacobian
+        Jacobian determinant of the susceptibility distortion, sampled in the
+        target space (at ``coordinates``); see :func:`reconstruct_fieldmap`.
+        If ``None``, no intensity modulation is applied.
     hmc_xfm
         A sequence of affine transformations accounting for head motion from
         the individual volume into the BOLD reference space.
@@ -232,7 +240,7 @@ def resample_series(
     data: np.ndarray,
     coordinates: np.ndarray,
     pe_info: list[tuple[int, float]],
-    jacobian: bool,
+    jacobian: np.ndarray | None,
     hmc_xfms: list[np.ndarray] | None,
     fmap_hz: np.ndarray,
     output_dtype: np.dtype | str | None = None,
@@ -262,6 +270,10 @@ def resample_series(
         ``(1, -0.04)`` becomes ``[0, -0.04, 0]``, which indicates that a
         +1 Hz deflection in the field shifts 0.04 voxels toward the start
         of the data array in the second dimension.
+    jacobian
+        Jacobian determinant of the susceptibility distortion, sampled in the
+        target space (at ``coordinates``); see :func:`reconstruct_fieldmap`.
+        If ``None``, no intensity modulation is applied.
     hmc_xfm
         A sequence of affine transformations accounting for head motion from
         the individual volume into the BOLD reference space.
@@ -312,7 +324,7 @@ def resample_image[T: SpatialImage](
     transforms: nt.TransformChain,
     fieldmap: SpatialImage | None,
     pe_info: list[tuple[int, float]] | None,
-    jacobian: bool = True,
+    jacobian: SpatialImage | None = None,
     nthreads: int = 1,
     output_dtype: np.dtype | str | None = 'f4',
     order: InterpolationOrder = 3,
@@ -339,6 +351,11 @@ def resample_image[T: SpatialImage](
         ``(1, -0.04)`` becomes ``[0, -0.04, 0]``, which indicates that a
         +1 Hz deflection in the field shifts 0.04 voxels toward the start
         of the data array in the second dimension.
+    jacobian
+        Jacobian determinant of the susceptibility distortion, sampled in the
+        target space; see :func:`reconstruct_fieldmap`.
+        Values below zero (fold-over) are clipped to zero.
+        If ``None``, no intensity modulation is applied.
     nthreads
         Number of threads to use for parallel resampling
     output_dtype
@@ -394,7 +411,7 @@ def resample_image[T: SpatialImage](
         data=source.get_fdata(dtype='f4'),
         coordinates=mapped_coordinates.T.reshape((3, *target.shape[:3])),
         pe_info=pe_info,
-        jacobian=jacobian,
+        jacobian=np.clip(jacobian.get_fdata(dtype='f4'), 0, None) if jacobian else None,
         hmc_xfms=hmc_xfms,
         fmap_hz=fieldmap.get_fdata(dtype='f4'),
         output_dtype=output_dtype,
