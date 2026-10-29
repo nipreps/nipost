@@ -142,8 +142,12 @@ def test_demo_reproduces_checksum() -> None:
     fmapref_file = fmaps['fieldmaps'][fmapid]['magnitude']
     assert isinstance(fmapref_file, str)
 
+    MNI_full = load_api(MNI_file, SpatialImage)
+    # If the target data/metadata doesn't match, we can't validate the final result
+    assert sha256(MNI_full.to_bytes()).hexdigest()[:8] == '5769f4e8'
+
     bold, pe_info = prepare_epi(load_api(bold_file, SpatialImage), bold_file.get_metadata())
-    MNI = nli.crop_img(MNI_file, copy_header=True)
+    MNI = nli.crop_img(MNI_full, copy_header=True)
     fmapref = load_api(fmapref_file, SpatialImage)
     coeffs = [load_api(path, SpatialImage) for path in coeff_files]
 

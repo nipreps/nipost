@@ -23,6 +23,9 @@ defaults:
 # Force tox and pytest to use color
 env:
   FORCE_COLOR: true
+  # Force integration tests to work with Haswell instruction set, ensuring hash consistency.
+  # This is probably not the best long-term strategy.
+  OPENBLAS_CORETYPE: Haswell
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
