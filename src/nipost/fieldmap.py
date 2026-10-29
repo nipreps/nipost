@@ -49,7 +49,15 @@ def pe_vector(
     ValueError
         If ``pe_info`` entries differ or ``xfm`` is not affine.
     """
-    raise NotImplementedError
+    if len(set(pe_info)) != 1:
+        raise ValueError('pe_info entries must agree')
+    axis, trt = pe_info[0]
+
+    affine = as_affine(xfm)
+    if affine is None:
+        raise ValueError('xfm must reduce to an affine')
+
+    return affine.matrix[:3, :3] @ boldref.affine[:3, axis] * trt
 
 
 def _level_spline(level: SpatialImage) -> NdBSpline:
