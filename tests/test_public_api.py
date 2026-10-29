@@ -9,6 +9,7 @@ def test_public_symbols_exposed():
         'load_transforms',
         'get_trt',
         'ensure_positive_cosines',
+        'pe_vector',
     ):
         assert hasattr(nipost, name), name
 

@@ -15,6 +15,43 @@ def as_affine(xfm: nt.base.TransformBase) -> nt.Affine | None:
     return xfm if type(xfm) is nt.Affine else None
 
 
+def pe_vector(
+    boldref: SpatialImage,
+    pe_info: list[tuple[int, float]],
+    xfm: nt.base.TransformBase,
+) -> np.ndarray:
+    r"""Phase-encoding voxel step times signed readout time, in fieldmap world space.
+
+    With :math:`\nabla\phi` in Hz/mm, the susceptibility Jacobian is
+    :math:`J = 1 + \nabla\phi \cdot v`.
+
+    Parameters
+    ----------
+    boldref
+        BOLD reference, as returned by :func:`~nipost.epi.prepare_epi`. Its voxel
+        axes must be those of the ``source`` given to :func:`~nipost.resample_image`,
+        as ``pe_info`` indexes them.
+    pe_info
+        Per-volume ``(axis-index, signed-readout-time)`` from
+        :func:`~nipost.epi.prepare_epi`. All entries must agree.
+    xfm
+        Same convention as ``transforms`` in :func:`reconstruct_fieldmap`:
+        maps images from fieldmap into boldref space, so its matrix maps
+        boldref points to fieldmap points. Must reduce to an affine.
+
+    Returns
+    -------
+    v : :class:`~numpy.ndarray`
+        Shape ``(3,)``, in mm·s. The sign encodes polarity.
+
+    Raises
+    ------
+    ValueError
+        If ``pe_info`` entries differ or ``xfm`` is not affine.
+    """
+    raise NotImplementedError
+
+
 def _level_spline(level: SpatialImage) -> NdBSpline:
     """Build the cubic tensor-product spline of one coefficient level.
 
