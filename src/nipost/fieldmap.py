@@ -1,5 +1,7 @@
 """Fieldmap reconstruction (ported from fMRIPrep + SDCFlows)."""
 
+from typing import overload
+
 import nibabel as nb
 import nitransforms as nt
 import numpy as np
@@ -15,6 +17,51 @@ def as_affine(xfm: nt.base.TransformBase) -> nt.Affine | None:
     return xfm if type(xfm) is nt.Affine else None
 
 
+def pe_vector(
+    boldref: SpatialImage,
+    pe_info: list[tuple[int, float]],
+    xfm: nt.base.TransformBase,
+) -> np.ndarray:
+    r"""Phase-encoding voxel step times signed readout time, in fieldmap world space.
+
+    With :math:`\nabla\phi` in Hz/mm, the susceptibility Jacobian is
+    :math:`J = 1 + \nabla\phi \cdot v`.
+
+    Parameters
+    ----------
+    boldref
+        BOLD reference, as returned by :func:`~nipost.epi.prepare_epi`. Its voxel
+        axes must be those of the ``source`` given to :func:`~nipost.resample_image`,
+        as ``pe_info`` indexes them.
+    pe_info
+        Per-volume ``(axis-index, signed-readout-time)`` from
+        :func:`~nipost.epi.prepare_epi`. All entries must agree.
+    xfm
+        Same convention as ``transforms`` in :func:`reconstruct_fieldmap`:
+        maps images from fieldmap into boldref space, so its matrix maps
+        boldref points to fieldmap points. Must reduce to an affine.
+
+    Returns
+    -------
+    v : :class:`~numpy.ndarray`
+        Shape ``(3,)``, in mm·s. The sign encodes polarity.
+
+    Raises
+    ------
+    ValueError
+        If ``pe_info`` entries differ or ``xfm`` is not affine.
+    """
+    if len(set(pe_info)) != 1:
+        raise ValueError('pe_info entries must agree')
+    axis, trt = pe_info[0]
+
+    affine = as_affine(xfm)
+    if affine is None:
+        raise ValueError('xfm must reduce to an affine')
+
+    return affine.matrix[:3, :3] @ boldref.affine[:3, axis] * trt
+
+
 def _level_spline(level: SpatialImage) -> NdBSpline:
     """Build the cubic tensor-product spline of one coefficient level.
 
@@ -28,12 +75,30 @@ def _level_spline(level: SpatialImage) -> NdBSpline:
     return NdBSpline(knots, coeffs, 3)
 
 
+@overload
 def reconstruct_fieldmap(
     coefficients: list[SpatialImage],
     target: SpatialImage,
     transforms: nt.base.TransformBase,
-) -> nb.Nifti1Image:
-    """Evaluate a B-Spline fieldmap at the voxels of a target space
+    *,
+    pe_vector: None = None,
+) -> tuple[nb.Nifti1Image, None]: ...
+@overload
+def reconstruct_fieldmap(
+    coefficients: list[SpatialImage],
+    target: SpatialImage,
+    transforms: nt.base.TransformBase,
+    *,
+    pe_vector: np.ndarray,
+) -> tuple[nb.Nifti1Image, nb.Nifti1Image]: ...
+def reconstruct_fieldmap(
+    coefficients: list[SpatialImage],
+    target: SpatialImage,
+    transforms: nt.base.TransformBase,
+    *,
+    pe_vector: np.ndarray | None = None,
+) -> tuple[nb.Nifti1Image, nb.Nifti1Image | None]:
+    r"""Evaluate a B-Spline fieldmap at the voxels of a target space
 
     Each coefficient level is a cubic B-Spline over its own lattice. The levels
     are evaluated exactly at the center of every target voxel, and summed.
@@ -54,6 +119,8 @@ def reconstruct_fieldmap(
         A nitransforms transform that maps points in the target space
         into the fieldmap space, i.e., the one that resamples fieldmap images
         into the target space.
+    pe_vector
+        A vector from :func:`pe_vector`. If given, the Jacobian is also returned.
 
     Returns
     -------
@@ -61,6 +128,10 @@ def reconstruct_fieldmap(
         The fieldmap encoded in ``coefficients``, in Hz, with the shape
         (first three axes) and affine of ``target``. It is 0 beyond the support
         of the coefficients.
+    jacobian
+        Only if ``pe_vector`` is given: :math:`J = 1 + \nabla\phi \cdot v`, with
+        :math:`v` the ``pe_vector``, unclipped, on the grid of ``target``.
+        It is 1 beyond the support of the coefficients.
     """
     shape = target.shape[:3]
     ijk = np.indices(shape).reshape(3, -1).T
@@ -70,11 +141,20 @@ def reconstruct_fieldmap(
     ).map(ijk)
 
     field = np.zeros(len(ijk))
+    jac = np.ones(len(ijk))
     for level in coefficients:
         lattice = nb.affines.apply_affine(np.linalg.inv(level.affine), fmap_xyz)
         # The field is exactly 0 from two knots outside the lattice
         inside = ((lattice > -2) & (lattice < np.array(level.shape[:3]) + 1)).all(axis=1)
-        field[inside] += _level_spline(level)(lattice[inside])
+        points = lattice[inside]
+        spline = _level_spline(level)
+        field[inside] += spline(points)
+        if pe_vector is not None:
+            # Directional derivative: v in lattice units, then the lattice-axis derivatives
+            u = np.linalg.inv(level.affine)[:3, :3] @ pe_vector
+            for axis in range(3):
+                nu = tuple(int(a == axis) for a in range(3))
+                jac[inside] += u[axis] * spline(points, nu=nu)
     field = field.reshape(shape)
 
     fmap_img = nb.Nifti1Image(field.astype('float32'), target.affine)
@@ -83,4 +163,9 @@ def reconstruct_fieldmap(
     fmap_img.header['cal_max'] = max_abs
     fmap_img.header['cal_min'] = -max_abs
 
-    return fmap_img
+    jac_img = None
+    if pe_vector is not None:
+        jac_img = nb.Nifti1Image(jac.reshape(shape).astype('float32'), target.affine)
+        jac_img.header.set_intent('estimate', name='jacobian')
+
+    return fmap_img, jac_img
