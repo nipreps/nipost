@@ -24,7 +24,13 @@ pip install 'nipost[bids]'
 
 ```python
 import nibabel as nb
-from nipost import load_transforms, reconstruct_fieldmap, resample_image
+from nipost import (
+    load_transforms,
+    prepare_epi,
+    reconstruct_fieldmap,
+    reconstruct_gradient,
+    resample_image,
+)
 from nipost.bids import collect_derivatives, collect_fieldmaps
 from nipost.bids.spec import load_spec
 
@@ -65,9 +71,13 @@ run2std = load_transforms(
     inverse=[False],
 )
 
+# Orient the BOLD image and derive the phase-encoding info resampling needs
+bold, pe_info = prepare_epi(nb.load(bold_file), bold_metadata)
+
 # 3. Reconstruct the fieldmap (B-Spline coefficients → Hz image in target space)
+# and its gradient, which drives the per-frame susceptibility Jacobian
 # The run's fieldmap is the ID whose entry found a transform; none means SDC was skipped
-fmap_std = None
+fmap_std = grad_std = None
 fmapid, fmap_xfms = next(
     ((k, v) for k, v in func['fmap_transforms'].items() if v), (None, None)
 )
@@ -79,6 +89,8 @@ if fmapid is not None:
     # 'coeffs' is a list: one entry per B-Spline level.
     coeffs = [nb.load(path) for path in fmaps['fieldmaps'][fmapid]['coeffs']]
     fmap_std = reconstruct_fieldmap(coeffs, target, fmap2std)
+    fmap2epi = load_transforms([fmap_xfms['run2fmap']], inverse=[True])
+    grad_std = reconstruct_gradient(coeffs, target, fmap2std, fmap2epi)
 
 # 4. Resample BOLD in one shot — HMC + SDC + normalization simultaneously
 bold_mni = resample_image(
@@ -86,6 +98,7 @@ bold_mni = resample_image(
     target=target,
     transforms=run2std,
     fieldmap=fmap_std,
+    fieldmap_gradient=grad_std,
     pe_info=pe_info,
 )
 ```
@@ -98,8 +111,10 @@ bold_mni = resample_image(
 | -------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `nipost.resample_image`          | Resample a 3-/4-D BOLD image into a target space, applying HMC + SDC in one interpolation pass. |
 | `nipost.reconstruct_fieldmap`    | Evaluate B-Spline fieldmap coefficients at the voxels of a target space.                        |
+| `nipost.reconstruct_gradient`    | Evaluate the fieldmap gradient at the voxels of a target space.                                 |
 | `nipost.load_transforms`         | Load a series of transform files and compose them into a `nitransforms` chain.                  |
 | `nipost.get_trt`                 | Derive the total readout time from BIDS sidecar metadata.                                       |
+| `nipost.prepare_epi`             | Reorient an EPI image and derive per-volume phase-encoding info from its metadata.              |
 | `nipost.ensure_positive_cosines` | Reorient an image so all direction cosines are positive (normalises PE axis bookkeeping).       |
 
 ### `nipost[bids]` extra
