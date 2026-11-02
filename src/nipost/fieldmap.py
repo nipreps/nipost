@@ -139,4 +139,19 @@ def reconstruct_gradient(
     ValueError
         If ``fmap2epi`` does not reduce to an affine.
     """
-    raise NotImplementedError
+    if (fmap2epi := as_affine(fmap2epi)) is None:
+        raise ValueError('fmap2epi must reduce to an affine')
+
+    grad = np.zeros((*target.shape[:3], 1, 3))
+    for level, inside, lattice in _level_points(coefficients, target, fmap2target):
+        spline = _level_spline(level)
+        # The gradient is a row vector at each lattice point
+        partials = np.stack([spline(lattice, nu=nu) for nu in np.eye(3, dtype=int)], axis=1)
+        # Right-applied to gradients in lattice space to get gradients in EPI world space
+        lattice2epi = np.linalg.inv(level.affine[:3, :3]) @ fmap2epi.matrix[:3, :3]
+        # The sum of gradients is the gradient of the sum
+        grad[inside, 0] += partials @ lattice2epi
+
+    img = nb.Nifti1Image(grad.astype('float32'), target.affine)
+    img.header.set_intent('vector', name='fmap grad Hz/mm')
+    return img
