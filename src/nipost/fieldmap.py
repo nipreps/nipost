@@ -98,3 +98,45 @@ def reconstruct_fieldmap(
     fmap_img.header['cal_min'] = -max_abs
 
     return fmap_img
+
+
+def reconstruct_gradient(
+    coefficients: list[SpatialImage],
+    target: SpatialImage,
+    fmap2target: nt.base.TransformBase,
+    fmap2epi: nt.base.TransformBase,
+) -> nb.Nifti1Image:
+    """Evaluate the analytic gradient of a B-Spline fieldmap at the voxels of a target
+
+    Evaluates the row vector :math:`\\nabla_F f\\,M`, where :math:`f` is the fieldmap
+    summed over the coefficient levels, :math:`\\nabla_F f` is its gradient in fieldmap
+    space, and :math:`M` is the linear part of ``fmap2epi``. The result is the gradient
+    of the field along the EPI world axes, in Hz/mm. The Jacobian of ``fmap2target``
+    itself is not applied.
+
+    Parameters
+    ----------
+    coefficients
+        list of B-spline coefficient images, as for :func:`reconstruct_fieldmap`.
+    target
+        The space to evaluate the gradient in. Only the first three axes are used.
+    fmap2target
+        A nitransforms transform that maps points in the target space into the
+        fieldmap space, i.e., the one that resamples fieldmap images into the target space.
+    fmap2epi
+        The transform that resamples fieldmap images into the EPI (boldref) space,
+        i.e., mapping EPI points into the fieldmap space. It must reduce to an affine.
+
+    Returns
+    -------
+    gradient
+        The gradient in Hz/mm, as a float32 vector image of shape
+        ``(*target.shape[:3], 1, 3)`` with the affine of ``target``. It is 0 beyond
+        the support of the coefficients.
+
+    Raises
+    ------
+    ValueError
+        If ``fmap2epi`` does not reduce to an affine.
+    """
+    raise NotImplementedError
