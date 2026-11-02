@@ -1,5 +1,7 @@
 """Fieldmap reconstruction (ported from fMRIPrep + SDCFlows)."""
 
+from collections.abc import Iterator
+
 import nibabel as nb
 import nitransforms as nt
 import numpy as np
@@ -26,6 +28,29 @@ def _level_spline(level: SpatialImage) -> NdBSpline:
     coeffs = np.pad(level.get_fdata().reshape(level.shape[:3]), 4)
     knots = tuple(np.arange(-6, n + 6, dtype='f8') for n in level.shape[:3])
     return NdBSpline(knots, coeffs, 3)
+
+
+def _level_points(
+    coefficients: list[SpatialImage],
+    target: SpatialImage,
+    transforms: nt.base.TransformBase,
+) -> Iterator[tuple[SpatialImage, np.ndarray, np.ndarray]]:
+    """Yield, per level, the target voxels it covers and their lattice coordinates.
+
+    Yields ``(level, inside, lattice[inside])``: ``inside`` is a boolean mask over the
+    target voxels, and the coordinates are in the level's voxel index space.
+    """
+    shape = target.shape[:3]
+    targetvox2fmap = collapse_transforms(
+        nt.TransformChain([nt.Affine(target.affine, reference=target), transforms])
+    )
+    fmap_xyz = targetvox2fmap.map(np.indices(shape).reshape(3, -1).T).reshape(*shape, 3)
+
+    for level in coefficients:
+        lattice = nb.affines.apply_affine(np.linalg.inv(level.affine), fmap_xyz)
+        # The field is exactly 0 from two knots outside the lattice
+        inside = ((lattice > -2) & (lattice < np.array(level.shape[:3]) + 1)).all(axis=-1)
+        yield level, inside, lattice[inside]
 
 
 def reconstruct_fieldmap(
@@ -62,20 +87,9 @@ def reconstruct_fieldmap(
         (first three axes) and affine of ``target``. It is 0 beyond the support
         of the coefficients.
     """
-    shape = target.shape[:3]
-    ijk = np.indices(shape).reshape(3, -1).T
-    # Map through any warp once; each level then needs only a float64 affine
-    fmap_xyz = collapse_transforms(
-        nt.TransformChain([nt.Affine(target.affine, reference=target), transforms])
-    ).map(ijk)
-
-    field = np.zeros(len(ijk))
-    for level in coefficients:
-        lattice = nb.affines.apply_affine(np.linalg.inv(level.affine), fmap_xyz)
-        # The field is exactly 0 from two knots outside the lattice
-        inside = ((lattice > -2) & (lattice < np.array(level.shape[:3]) + 1)).all(axis=1)
-        field[inside] += _level_spline(level)(lattice[inside])
-    field = field.reshape(shape)
+    field = np.zeros(target.shape[:3])
+    for level, inside, lattice in _level_points(coefficients, target, transforms):
+        field[inside] += _level_spline(level)(lattice)
 
     fmap_img = nb.Nifti1Image(field.astype('float32'), target.affine)
     fmap_img.header.set_intent('estimate', name='fieldmap Hz')
