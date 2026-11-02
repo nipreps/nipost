@@ -16,7 +16,7 @@ def test_resample_vol_identity_recovers_data(ramp_volume):
         data=data,
         coordinates=coordinates,
         pe_info=(0, 0.0),
-        jacobian=False,
+        fieldmap_gradient=None,
         hmc_xfm=None,
         fmap_hz=fmap_hz,
         order=1,
@@ -35,7 +35,7 @@ def test_resample_series_identity_recovers_series(ramp_volume):
         data=series,
         coordinates=coordinates,
         pe_info=[(0, 0.0), (0, 0.0)],
-        jacobian=False,
+        fieldmap_gradient=None,
         hmc_xfms=None,
         fmap_hz=fmap_hz,
         order=1,
@@ -57,7 +57,6 @@ def test_resample_image_identity_to_same_grid(ramp_volume):
         transforms=nt.TransformChain([nt.Affine()]),
         fieldmap=None,
         pe_info=None,
-        jacobian=False,
         order=1,
     )
     assert out.shape == series.shape
