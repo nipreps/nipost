@@ -36,7 +36,7 @@ def resample_vol(
     data: np.ndarray,
     coordinates: np.ndarray,
     pe_info: tuple[int, float],
-    jacobian: bool,
+    fieldmap_gradient: np.ndarray | None,
     hmc_xfm: np.ndarray | None,
     fmap_hz: np.ndarray,
     output: np.dtype | np.ndarray | None = None,
@@ -65,6 +65,12 @@ def resample_vol(
         ``(1, -0.04)`` becomes ``[0, -0.04, 0]``, which indicates that a
         +1 Hz deflection in the field shifts 0.04 voxels toward the start
         of the data array in the second dimension.
+    fieldmap_gradient
+        The gradient of the fieldmap with respect to the source voxel index, in Hz
+        per voxel, sampled at ``coordinates``, with shape ``(*coordinates.shape[1:], 3)``.
+        Used to calculate the Jacobian determinant of the susceptibility distortion
+        in the given volume.
+        If ``None``, Jacobian modulation is not applied.
     hmc_xfm
         Affine transformation accounting for head motion from the individual
         volume into the BOLD reference space. This affine must be in VOX2VOX
@@ -112,8 +118,12 @@ def resample_vol(
         prefilter=prefilter,
     )
 
-    if jacobian:
-        result *= 1 + np.gradient(vsm, axis=pe_info[0])
+    if fieldmap_gradient is not None:
+        axis, trt = pe_info
+        # Pull the PE step back into the reference pose: J = 1 + trt * g . inv(H)[:, axis]
+        step = np.eye(3)[axis] if hmc_xfm is None else np.linalg.inv(hmc_xfm[:3, :3])[:, axis]
+        jac = 1 + trt * (fieldmap_gradient @ step.astype('f4'))
+        result *= np.clip(jac, 0, None)
 
     return result
 
@@ -122,7 +132,7 @@ async def resample_series_async(
     data: np.ndarray,
     coordinates: np.ndarray,
     pe_info: list[tuple[int, float]],
-    jacobian: bool,
+    fieldmap_gradient: np.ndarray | None,
     hmc_xfms: list[np.ndarray] | None,
     fmap_hz: np.ndarray,
     output_dtype: np.dtype | str | None = None,
@@ -152,6 +162,10 @@ async def resample_series_async(
         ``(1, -0.04)`` becomes ``[0, -0.04, 0]``, which indicates that a
         +1 Hz deflection in the field shifts 0.04 voxels toward the start
         of the data array in the second dimension.
+    fieldmap_gradient
+        The gradient of the fieldmap with respect to the source voxel index, in Hz
+        per voxel, with shape ``(*coordinates.shape[1:], 3)``. If given, each volume
+        is multiplied by its own Jacobian; see :func:`resample_vol`.
     hmc_xfm
         A sequence of affine transformations accounting for head motion from
         the individual volume into the BOLD reference space.
@@ -184,7 +198,7 @@ async def resample_series_async(
             data,
             coordinates,
             pe_info[0],
-            jacobian,
+            fieldmap_gradient,
             hmc_xfms[0] if hmc_xfms else None,
             fmap_hz,
             output,
@@ -208,7 +222,7 @@ async def resample_series_async(
                     data=volume,
                     coordinates=coordinates,
                     pe_info=pe_info[volid],
-                    jacobian=jacobian,
+                    fieldmap_gradient=fieldmap_gradient,
                     hmc_xfm=hmc_xfms[volid] if hmc_xfms else None,
                     fmap_hz=fmap_hz,
                     output=out_array[..., volid],
@@ -232,7 +246,7 @@ def resample_series(
     data: np.ndarray,
     coordinates: np.ndarray,
     pe_info: list[tuple[int, float]],
-    jacobian: bool,
+    fieldmap_gradient: np.ndarray | None,
     hmc_xfms: list[np.ndarray] | None,
     fmap_hz: np.ndarray,
     output_dtype: np.dtype | str | None = None,
@@ -262,6 +276,10 @@ def resample_series(
         ``(1, -0.04)`` becomes ``[0, -0.04, 0]``, which indicates that a
         +1 Hz deflection in the field shifts 0.04 voxels toward the start
         of the data array in the second dimension.
+    fieldmap_gradient
+        The gradient of the fieldmap with respect to the source voxel index, in Hz
+        per voxel, with shape ``(*coordinates.shape[1:], 3)``. If given, each volume
+        is multiplied by its own Jacobian; see :func:`resample_vol`.
     hmc_xfm
         A sequence of affine transformations accounting for head motion from
         the individual volume into the BOLD reference space.
@@ -293,7 +311,7 @@ def resample_series(
             data=data,
             coordinates=coordinates,
             pe_info=pe_info,
-            jacobian=jacobian,
+            fieldmap_gradient=fieldmap_gradient,
             hmc_xfms=hmc_xfms,
             fmap_hz=fmap_hz,
             output_dtype=output_dtype,
@@ -312,7 +330,7 @@ def resample_image[T: SpatialImage](
     transforms: nt.TransformChain,
     fieldmap: SpatialImage | None,
     pe_info: list[tuple[int, float]] | None,
-    jacobian: bool = True,
+    fieldmap_gradient: SpatialImage | None = None,
     nthreads: int = 1,
     output_dtype: np.dtype | str | None = 'f4',
     order: InterpolationOrder = 3,
@@ -320,7 +338,7 @@ def resample_image[T: SpatialImage](
     cval: float = 0.0,
     prefilter: bool = True,
 ) -> T:
-    """Resample a 3- or 4D image into a target space, applying head-motion
+    r"""Resample a 3- or 4D image into a target space, applying head-motion
     and susceptibility-distortion correction simultaneously.
 
     Parameters
@@ -339,6 +357,16 @@ def resample_image[T: SpatialImage](
         ``(1, -0.04)`` becomes ``[0, -0.04, 0]``, which indicates that a
         +1 Hz deflection in the field shifts 0.04 voxels toward the start
         of the data array in the second dimension.
+    fieldmap_gradient
+        The gradient of the fieldmap in Hz/mm, sampled in the target space, from
+        :func:`~nipost.fieldmap.reconstruct_gradient`, whose ``fmap2epi`` maps
+        ``source`` world points to fieldmap points.
+        Each volume is multiplied by its own Jacobian,
+        :math:`J_t = 1 + \tau_t\,\mathbf g\cdot(\tilde H_t^{-1})_{[:,p_t]}`,
+        clipped at 0, where :math:`\mathbf g` is the gradient with respect to the
+        source voxel index, :math:`\tilde H_t` the volume's head motion in voxel
+        coordinates, and :math:`(p_t, \tau_t)` its ``pe_info``.
+        If ``None``, no modulation is applied. Requires ``fieldmap``.
     nthreads
         Number of threads to use for parallel resampling
     output_dtype
@@ -358,6 +386,9 @@ def resample_image[T: SpatialImage](
     resampled_bold
         The BOLD series resampled into the target space
     """
+    if fieldmap_gradient is not None and fieldmap is None:
+        raise ValueError('fieldmap_gradient requires fieldmap')
+
     if not isinstance(transforms, nt.TransformChain):
         transforms = nt.TransformChain([transforms])
     if isinstance(transforms[-1], nt.linear.LinearTransformsMapping):
@@ -389,12 +420,17 @@ def resample_image[T: SpatialImage](
         fieldmap = nb.Nifti1Image(np.zeros(target.shape[:3], dtype='f4'), target.affine)
     if pe_info is None:
         pe_info = [(0, 0) for _ in range(source.shape[-1])]
+    # Hz/mm along the source world axes -> Hz per source voxel
+    gradient = None
+    if fieldmap_gradient is not None:
+        g_mm = fieldmap_gradient.get_fdata(dtype='f4')[..., 0, :]
+        gradient = g_mm @ vox2ras[:3, :3].astype('f4')
 
     resampled_data = resample_series(
         data=source.get_fdata(dtype='f4'),
         coordinates=mapped_coordinates.T.reshape((3, *target.shape[:3])),
         pe_info=pe_info,
-        jacobian=jacobian,
+        fieldmap_gradient=gradient,
         hmc_xfms=hmc_xfms,
         fmap_hz=fieldmap.get_fdata(dtype='f4'),
         output_dtype=output_dtype,

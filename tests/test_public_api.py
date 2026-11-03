@@ -5,6 +5,7 @@ def test_public_symbols_exposed():
     for name in (
         'resample_image',
         'reconstruct_fieldmap',
+        'reconstruct_gradient',
         'prepare_epi',
         'load_transforms',
         'get_trt',

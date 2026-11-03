@@ -67,6 +67,7 @@ def test_demo_reproduces_checksum() -> None:
     and resamples afterwards, which leaves any target voxel outside the fieldmap's
     field-of-view at 0 Hz. Parity with the demo would mean reproducing that, so the
     checksums below are nipost's own.
+    They also include the per-frame Jacobian modulation, which the demo does not apply.
     """
     from bids import BIDSLayout
     from nibabel.spatialimages import SpatialImage
@@ -77,6 +78,7 @@ def test_demo_reproduces_checksum() -> None:
         load_transforms,
         prepare_epi,
         reconstruct_fieldmap,
+        reconstruct_gradient,
         resample_image,
     )
     from nipost.bids import collect_derivatives, collect_fieldmaps
@@ -154,8 +156,10 @@ def test_demo_reproduces_checksum() -> None:
         bold2std_xfms, inverse=[False]
     )  # single-element inverse list broadcasts to all transforms in the chain
     fmap2std = load_transforms(fmap2std_xfms, inverse=fmap2std_inv)
+    fmap2epi = load_transforms([run2fmap_xfm], inverse=[True])
 
     fmap_std = reconstruct_fieldmap(coeffs, MNI, fmap2std)
+    grad_std = reconstruct_gradient(coeffs, MNI, fmap2std, fmap2epi)
 
     bold_mni = resample_image(
         source=bold,
@@ -163,12 +167,12 @@ def test_demo_reproduces_checksum() -> None:
         transforms=bold2std,
         fieldmap=fmap_std,
         pe_info=pe_info,
-        jacobian=False,
+        fieldmap_gradient=grad_std,
         mode='grid-constant',
     )
 
     # Data and affine are the important bits
-    assert sha256(np.asanyarray(bold_mni.dataobj).tobytes()).hexdigest()[:8] == '1cd0d5e0'
+    assert sha256(np.asanyarray(bold_mni.dataobj).tobytes()).hexdigest()[:8] == '04de12bf'
     assert sha256(bold_mni.affine.tobytes()).hexdigest()[:8] == 'c532bd33'
     # The full serialization (with header) is worth checking too
-    assert sha256(bold_mni.to_bytes()).hexdigest()[:8] == 'd7bc7be1'
+    assert sha256(bold_mni.to_bytes()).hexdigest()[:8] == 'd908a3cd'

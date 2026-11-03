@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from nipost.fieldmap import as_affine, reconstruct_fieldmap
+from nipost.fieldmap import as_affine, reconstruct_fieldmap, reconstruct_gradient
 
 
 def test_as_affine_collapses_nested_chain():
@@ -69,6 +69,42 @@ def shift_warp(dx):
     return nt.DenseFieldTransform(nb.Nifti1Image(deltas, affine), is_deltas=True)
 
 
+TARGETS = [
+    pytest.param(grid(span=20.0), id='RAS'),
+    pytest.param(grid(span=20.0, zoom=1.0), id='finer than the knots'),
+    pytest.param(las_grid(), id='LAS, non-cubic'),
+    pytest.param(asr_grid(), id='axis-permuted (ASR)'),
+    pytest.param(grid(span=20.0, angle=np.pi / 6), id='rotated'),
+    pytest.param(series_grid(), id='4-D'),
+]
+
+
+def rot_z(theta):
+    c, s = np.cos(theta), np.sin(theta)
+    out = np.eye(4)
+    out[:2, :2] = [[c, -s], [s, c]]
+    return out
+
+
+def quadratic_coefficients():
+    """Coefficients ``u**2 - 1/3`` at knot index ``u`` along i, on 4 mm knots over -40..+40 mm.
+
+    Cubic B-splines sample ``u**2`` at the knots as ``u**2 + 1/3``, so the field is
+    exactly ``f = ((x + 40) / 4) ** 2``, with ``df/dx = (x + 40) / 8``.
+    """
+    knots = grid(span=40.0, zoom=4.0)
+    u = np.indices(knots.shape, dtype='f4')[0]
+    return [nb.Nifti1Image(u**2 - 1 / 3, knots.affine)]
+
+
+def gradient(coefficients, target, fmap2target, fmap2epi=None):
+    """The gradient's components along a trailing axis, shape (*target_shape, 3)."""
+    img = reconstruct_gradient(
+        coefficients, target, fmap2target, nt.Affine() if fmap2epi is None else fmap2epi
+    )
+    return np.asanyarray(img.dataobj)[..., 0, :]
+
+
 def test_reconstruct_fieldmap_zero_outside_support():
     # The field falls off to 0 Hz beyond 48 mm, two knot spacings past the outermost knot.
     target = grid(span=60.0)
@@ -96,17 +132,7 @@ def test_reconstruct_fieldmap_tapers_past_the_lattice():
     assert_allclose(field.dataobj[:, 0, 0], expected, atol=1e-4)
 
 
-@pytest.mark.parametrize(
-    'target',
-    [
-        pytest.param(grid(span=20.0), id='RAS'),
-        pytest.param(grid(span=20.0, zoom=1.0), id='finer than the knots'),
-        pytest.param(las_grid(), id='LAS, non-cubic'),
-        pytest.param(asr_grid(), id='axis-permuted (ASR)'),
-        pytest.param(grid(span=20.0, angle=np.pi / 6), id='rotated'),
-        pytest.param(series_grid(), id='4-D'),
-    ],
-)
+@pytest.mark.parametrize('target', TARGETS)
 def test_reconstruct_fieldmap_target_geometry(target):
     field = reconstruct_fieldmap(ramp_coefficients(), target, nt.Affine())
 
@@ -194,3 +220,104 @@ def test_reconstruct_fieldmap_singleton_axis():
 
     assert field.shape == target.shape
     assert_allclose(field.dataobj, ras(target)[..., 0], atol=1e-4)
+
+
+@pytest.mark.parametrize('target', TARGETS)
+def test_reconstruct_gradient_of_ramp(target):
+    img = reconstruct_gradient(ramp_coefficients(), target, nt.Affine(), nt.Affine())
+
+    assert img.shape == (*target.shape[:3], 1, 3)
+    assert_allclose(img.affine, target.affine)
+    assert_allclose(img.dataobj, np.broadcast_to([1.0, 0.0, 0.0], img.shape), atol=1e-6)
+
+
+def test_reconstruct_gradient_along_epi_axes():
+    # The gradient is expressed along the EPI axes: M^T e_x, the first row of M.
+    # A shear and anisotropic scale keep M^T, M^-1 and M distinguishable.
+    target = grid(span=20.0)
+    linear = rot_z(0.4)[:3, :3] @ np.array([[1.2, 0.3, 0.0], [0.0, 0.9, 0.0], [0.0, 0.0, 1.1]])
+    matrix = nb.affines.from_matvec(linear, [5.0, 0.0, 0.0])
+
+    data = gradient(ramp_coefficients(), target, nt.Affine(), nt.Affine(matrix))
+
+    assert_allclose(data, np.broadcast_to(linear[0], data.shape), atol=1e-6)
+
+
+@pytest.mark.parametrize(
+    'target',
+    [
+        pytest.param(grid(span=20.0), id='RAS'),
+        pytest.param(las_grid(), id='LAS'),
+        pytest.param(grid(span=20.0, angle=0.5), id='rotated'),
+    ],
+)
+def test_reconstruct_gradient_follows_field_curvature(target):
+    data = gradient(quadratic_coefficients(), target, nt.Affine())
+
+    # float32 coefficients up to 400 limit the precision of the rotated lattice
+    assert_allclose(data[..., 0], (ras(target)[..., 0] + 40) / 8, atol=1e-5)
+    assert_allclose(data[..., 1:], 0.0, atol=1e-5)
+
+
+def test_reconstruct_gradient_sums_levels():
+    knots = grid(span=80.0, zoom=8.0)
+    coarse = nb.Nifti1Image(ras(knots)[..., 0].astype('f4'), knots.affine)
+    levels = [*ramp_coefficients(), coarse]
+    target = grid(span=20.0)
+
+    for ordered in (levels, levels[::-1]):
+        data = gradient(ordered, target, nt.Affine())
+        assert_allclose(data, np.broadcast_to([2.0, 0.0, 0.0], data.shape), atol=1e-6)
+
+
+def test_reconstruct_gradient_on_oblique_lattice():
+    knots = grid(span=40.0, zoom=4.0, angle=0.5)
+    slope = np.array([0.7, -0.2, 0.5])
+    oblique = nb.Nifti1Image((ras(knots) @ slope).astype('f4'), knots.affine)
+    target = grid(span=12.0)
+
+    data = gradient([oblique], target, nt.Affine())
+
+    assert_allclose(data, np.broadcast_to(slope, data.shape), atol=1e-5)
+
+
+def test_reconstruct_gradient_follows_nonlinear_transform():
+    target = grid(span=20.0)
+
+    data = gradient(quadratic_coefficients(), target, shift_warp(6.0))
+
+    # The warp's ringing, as in the nonlinear field test
+    assert_allclose(data[..., 0], (ras(target)[..., 0] + 46) / 8, atol=2e-4)
+
+
+def test_reconstruct_gradient_excludes_transform_jacobian():
+    target = grid(span=10.0)
+    scale = nt.Affine(np.diag([2.0, 2.0, 2.0, 1.0]))
+
+    data = gradient(quadratic_coefficients(), target, scale)
+
+    # df/dx is read at 2x; the factor 2 from the chain rule through ``scale`` is not applied
+    assert_allclose(data[..., 0], (2 * ras(target)[..., 0] + 40) / 8, atol=1e-6)
+
+
+def test_reconstruct_gradient_zero_outside_support():
+    target = grid(span=60.0)
+
+    data = gradient(ramp_coefficients(), target, nt.Affine())
+
+    extent = np.abs(ras(target)).max(axis=-1)
+    assert_allclose(data[extent > 48.0], 0.0, atol=1e-6)
+    inside = data[extent <= 36.0]
+    assert_allclose(inside, np.broadcast_to([1.0, 0.0, 0.0], inside.shape), atol=1e-6)
+
+
+def test_reconstruct_gradient_header():
+    img = reconstruct_gradient(ramp_coefficients(), grid(span=20.0), nt.Affine(), nt.Affine())
+
+    assert img.header.get_intent() == ('vector', (), 'fmap grad Hz/mm')
+    assert img.get_data_dtype() == np.float32
+
+
+def test_reconstruct_gradient_rejects_nonlinear_fmap2epi():
+    with pytest.raises(ValueError):
+        reconstruct_gradient(ramp_coefficients(), grid(span=20.0), nt.Affine(), shift_warp(0.0))
